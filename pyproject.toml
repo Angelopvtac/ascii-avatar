@@ -11,19 +11,22 @@ license = "MIT"
 dependencies = [
     "blessed",
     "pyzmq",
-    "kokoro-onnx",
     "sounddevice",
     "numpy",
     "mcp",
 ]
 
 [project.optional-dependencies]
+kokoro = ["kokoro-onnx"]
 elevenlabs = ["elevenlabs"]
 piper = ["piper-tts"]
+all = ["kokoro-onnx", "elevenlabs"]
 dev = ["pytest", "pytest-timeout"]
 
 [project.scripts]
 avatar = "avatar.main:main"
+avatar-bridge = "avatar.bridge.cli:main"
+avatar-mcp = "avatar.bridge.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/avatar"]
