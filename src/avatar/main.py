@@ -71,6 +71,10 @@ def main(argv: list[str] | None = None) -> None:
         help="Override audio output device index",
     )
     parser.add_argument("--compact", action="store_true", help="Compact mode")
+    parser.add_argument(
+        "--headless", action="store_true",
+        help="Headless mode: run event bus and state machine without terminal rendering (for testing)",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
 
     args = parser.parse_args(argv)
@@ -105,17 +109,6 @@ def main(argv: list[str] | None = None) -> None:
 
     # State machine
     sm = AvatarStateMachine(idle_timeout=30)
-
-    # Renderer
-    import blessed
-    term = blessed.Terminal()
-    if args.no_color:
-        term.number_of_colors = 2
-    renderer = AvatarRenderer(
-        terminal=term,
-        frame_set=persona.frames,
-        frame_rate_modifier=persona.frame_rate_modifier,
-    )
 
     # Event bus
     bus = EventBus(socket_path=args.socket)
@@ -163,6 +156,30 @@ def main(argv: list[str] | None = None) -> None:
     bus.start()
     log.info("Avatar started. Persona: %s. Socket: %s", persona.name, args.socket)
     log.info("TTS: %s", "enabled" if tts else "disabled (animation only)")
+
+    if args.headless:
+        # Headless mode: no terminal rendering, just spin the event loop
+        log.info("Running in headless mode (no terminal rendering).")
+        try:
+            while running:
+                time.sleep(0.1)
+        finally:
+            audio_player.stop()
+            sm.shutdown()
+            bus.stop()
+            log.info("Avatar stopped.")
+        return
+
+    # Renderer (only needed for interactive mode)
+    import blessed
+    term = blessed.Terminal()
+    if args.no_color:
+        term.number_of_colors = 2
+    renderer = AvatarRenderer(
+        terminal=term,
+        frame_set=persona.frames,
+        frame_rate_modifier=persona.frame_rate_modifier,
+    )
 
     frame_index = 0
     last_event = ""
