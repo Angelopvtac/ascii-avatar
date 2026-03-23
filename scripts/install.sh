@@ -17,25 +17,19 @@ fi
 MODEL_DIR="$HOME/.cache/ascii-avatar/models"
 mkdir -p "$MODEL_DIR"
 
+RELEASE_URL="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
+
 echo "[2/3] Downloading Kokoro TTS models..."
 if [ ! -f "$MODEL_DIR/kokoro-v1.0.onnx" ]; then
-    echo "  Downloading kokoro-v1.0.onnx..."
-    python -c "
-from huggingface_hub import hf_hub_download
-hf_hub_download('hexgrad/Kokoro-82M', 'kokoro-v1.0.onnx', local_dir='$MODEL_DIR')
-print('  Done.')
-"
+    echo "  Downloading kokoro-v1.0.onnx (~311MB)..."
+    wget -q --show-progress -O "$MODEL_DIR/kokoro-v1.0.onnx" "$RELEASE_URL/kokoro-v1.0.onnx"
 else
     echo "  kokoro-v1.0.onnx already exists."
 fi
 
 if [ ! -f "$MODEL_DIR/voices-v1.0.bin" ]; then
-    echo "  Downloading voices-v1.0.bin..."
-    python -c "
-from huggingface_hub import hf_hub_download
-hf_hub_download('hexgrad/Kokoro-82M', 'voices-v1.0.bin', local_dir='$MODEL_DIR')
-print('  Done.')
-"
+    echo "  Downloading voices-v1.0.bin (~27MB)..."
+    wget -q --show-progress -O "$MODEL_DIR/voices-v1.0.bin" "$RELEASE_URL/voices-v1.0.bin"
 else
     echo "  voices-v1.0.bin already exists."
 fi
