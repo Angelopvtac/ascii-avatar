@@ -1,6 +1,10 @@
 ```
- ▄▀█ █▀ █▀▀ █▀█ █   ▄▀█ █░█ ▄▀█ ▀█▀ ▄▀█ █▀█
- █▀█ ▄█ █▄▄ █▄█ █   █▀█ ▀▄▀ █▀█ ░█░ █▀█ █▀▄
+  █████╗ ███████╗ ██████╗██╗██╗      █████╗ ██╗   ██╗ █████╗ ████████╗ █████╗ ██████╗
+ ██╔══██╗██╔════╝██╔════╝██║██║     ██╔══██╗██║   ██║██╔══██╗╚══██╔══╝██╔══██╗██╔══██╗
+ ███████║███████╗██║     ██║██║     ███████║██║   ██║███████║   ██║   ███████║██████╔╝
+ ██╔══██║╚════██║██║     ██║██║     ██╔══██║╚██╗ ██╔╝██╔══██║   ██║   ██╔══██║██╔══██╗
+ ██║  ██║███████║╚██████╗██║██║     ██║  ██║ ╚████╔╝ ██║  ██║   ██║   ██║  ██║██║  ██║
+ ╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝╚═╝     ╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝
 ```
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square)
@@ -13,15 +17,48 @@ A cyberpunk ASCII avatar that lives in a tmux pane alongside Claude Code. It wat
 
 ## How it works
 
-```
-Claude Code (hooks) ──PUSH──> PULL── Avatar Process
-                      ZeroMQ IPC       |-- State Machine (idle/thinking/speaking/listening/error)
-                                       |-- Renderer (blessed terminal)
-                                       |-- Persona Manager
-                                       '-- Voice Engine
-                                            |-- Kokoro  (local ONNX, primary)
-                                            |-- ElevenLabs  (cloud, opt-in)
-                                            '-- Piper  (fallback)
+```mermaid
+flowchart LR
+    subgraph claude ["Claude Code"]
+        H1["UserPromptSubmit hook"]
+        H2["Stop hook"]
+        H3["Notification hook"]
+    end
+
+    subgraph ipc ["ZeroMQ IPC"]
+        direction TB
+        SOCK["ipc:///tmp/ascii-avatar.sock\nPUSH / PULL"]
+    end
+
+    subgraph avatar ["Avatar Process"]
+        SM["State Machine"]
+        SM -->|idle / thinking / speaking\nlistening / error| REN["Renderer\n(blessed terminal)"]
+        SM --> PM["Persona Manager"]
+        SM --> VE["Voice Engine"]
+        VE --> K["Kokoro\nlocal ONNX\nprimary"]
+        VE --> EL["ElevenLabs\ncloud, opt-in"]
+        VE --> PI["Piper\nfallback"]
+    end
+
+    H1 -->|think| SOCK
+    H2 -->|speak| SOCK
+    H3 -->|speak| SOCK
+    SOCK --> SM
+
+    style claude fill:#0a0a1a,stroke:#00d4ff,color:#e0e0e8
+    style ipc fill:#0a0a1a,stroke:#ffb300,color:#e0e0e8
+    style avatar fill:#0a0a1a,stroke:#00ff88,color:#e0e0e8
+    style SOCK fill:#1a1a26,stroke:#ffb300,color:#ffb300
+    style SM fill:#1a1a26,stroke:#00d4ff,color:#00d4ff
+    style REN fill:#1a1a26,stroke:#00d4ff,color:#00d4ff
+    style PM fill:#1a1a26,stroke:#00d4ff,color:#00d4ff
+    style VE fill:#1a1a26,stroke:#00d4ff,color:#00d4ff
+    style K fill:#1a1a26,stroke:#b388ff,color:#b388ff
+    style EL fill:#1a1a26,stroke:#b388ff,color:#b388ff
+    style PI fill:#1a1a26,stroke:#b388ff,color:#b388ff
+    style H1 fill:#1a1a26,stroke:#00d4ff,color:#00d4ff
+    style H2 fill:#1a1a26,stroke:#00d4ff,color:#00d4ff
+    style H3 fill:#1a1a26,stroke:#00d4ff,color:#00d4ff
 ```
 
 Claude Code pushes events over a Unix socket (ZeroMQ PUSH/PULL). The avatar pulls those events, drives a thread-safe state machine, animates the terminal renderer, and synthesizes speech. When models are absent or `--no-voice` is passed, it falls back to animation-only mode.
