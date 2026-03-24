@@ -14,6 +14,7 @@ dependencies = [
     "sounddevice",
     "numpy",
     "mcp",
+    "anthropic",
 ]
 
 [project.optional-dependencies]
