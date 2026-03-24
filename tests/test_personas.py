@@ -5,7 +5,7 @@ class TestPersona:
     def test_ghost_exists(self):
         p = get_persona("ghost")
         assert p.name == "ghost"
-        assert p.frames == "cyberpunk"
+        assert p.frames == "portrait"
         assert p.voice_engine == "kokoro"
 
     def test_oracle_exists(self):

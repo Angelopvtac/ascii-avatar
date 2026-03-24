@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -49,10 +50,32 @@ class EventBus:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self.on_event: Callable[[AvatarEvent], None] | None = None
+        self._last_event_time: float | None = None
+        self._lock = threading.Lock()
 
     @property
     def socket_path(self) -> str:
         return self._socket_path
+
+    @property
+    def connected(self) -> bool:
+        """True if at least one event has been received."""
+        with self._lock:
+            return self._last_event_time is not None
+
+    @property
+    def last_event_time(self) -> float | None:
+        """Monotonic timestamp of the most recently received event, or None."""
+        with self._lock:
+            return self._last_event_time
+
+    @property
+    def time_since_last_event(self) -> float | None:
+        """Seconds since the last event was received, or None if never received."""
+        with self._lock:
+            if self._last_event_time is None:
+                return None
+            return time.monotonic() - self._last_event_time
 
     def start(self) -> None:
         self._stop_event.clear()
@@ -75,6 +98,8 @@ class EventBus:
                     raw = self._socket.recv(zmq.NOBLOCK)
                     data = json.loads(raw)
                     event = AvatarEvent.from_dict(data)
+                    with self._lock:
+                        self._last_event_time = time.monotonic()
                     if self.on_event:
                         self.on_event(event)
                 except (json.JSONDecodeError, ValueError) as e:

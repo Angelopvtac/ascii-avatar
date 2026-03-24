@@ -1,59 +1,187 @@
-# ascii-avatar
-
-A terminal-based ASCII avatar companion for Claude Code. It runs as a separate Python process, animating a cyberpunk character in response to Claude's activity (thinking, speaking, listening, idle) and reading responses aloud via local TTS. The persona system bundles frame sets, voice engines, and visual style into named presets.
-
-## Architecture
-
 ```
-Claude Code (hooks/MCP) ──PUSH──> PULL── Avatar Process
-                         ipc://              |-- State Machine
-                                             |-- Renderer (blessed)
-                                             |-- Persona Manager
-                                             '-- Voice Engine
-                                                  |-- KokoroEngine (default)
-                                                  |-- ElevenLabsEngine (opt-in)
-                                                  '-- PiperEngine (fallback)
+ ▄▀█ █▀ █▀▀ █▀█ █   ▄▀█ █░█ ▄▀█ ▀█▀ ▄▀█ █▀█
+ █▀█ ▄█ █▄▄ █▄█ █   █▀█ ▀▄▀ █▀█ ░█░ █▀█ █▀▄
 ```
 
-Claude Code pushes events over a Unix socket (ZeroMQ PUSH/PULL). The avatar process pulls those events, drives the state machine, animates the terminal renderer, and synthesizes speech.
+![Python](https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square)
+![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
+![TTS](https://img.shields.io/badge/TTS-Kokoro%20ONNX-purple?style=flat-square)
 
-## Quick Start
+A cyberpunk ASCII avatar that lives in a tmux pane alongside Claude Code. It watches Claude think, speak, and listen — animating in real time and reading responses aloud via local TTS.
+
+---
+
+## How it works
+
+```
+Claude Code (hooks) ──PUSH──> PULL── Avatar Process
+                      ZeroMQ IPC       |-- State Machine (idle/thinking/speaking/listening/error)
+                                       |-- Renderer (blessed terminal)
+                                       |-- Persona Manager
+                                       '-- Voice Engine
+                                            |-- Kokoro  (local ONNX, primary)
+                                            |-- ElevenLabs  (cloud, opt-in)
+                                            '-- Piper  (fallback)
+```
+
+Claude Code pushes events over a Unix socket (ZeroMQ PUSH/PULL). The avatar pulls those events, drives a thread-safe state machine, animates the terminal renderer, and synthesizes speech. When models are absent or `--no-voice` is passed, it falls back to animation-only mode.
+
+---
+
+## Features
+
+- Five animation states — idle, thinking, speaking, listening, error — each with distinct frame sets and timing
+- Local TTS via [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx) (~338 MB, no API key required)
+- Three personas with distinct voice, color, and animation speed
+- ZeroMQ IPC — hooks fire on every Claude tool use with no perceptible latency
+- MCP server so Claude can control its own avatar directly via tool calls
+- `avatar-bridge` CLI for scripting and manual testing
+- Portrait mode: swap ASCII frames for an image rendered in the terminal
+- Headless mode for CI and integration testing
+
+---
+
+## Personas
+
+| Persona | Color | Voice | Engine | Personality | Speed |
+|---------|-------|-------|--------|-------------|-------|
+| `ghost` (default) | cyan | af_bella | Kokoro | minimal | 1.0x |
+| `oracle` | amber | bf_emma | Kokoro | sage | 0.8x |
+| `spectre` | green | — | ElevenLabs | glitch | 1.3x |
+
+`spectre` requires `ELEVENLABS_API_KEY`. Without it, it falls back to Kokoro if models are present, otherwise animation-only.
+
+---
+
+## Quick start
+
+**1. Install system dependency**
 
 ```bash
-# 1. Install dependencies (portaudio + Kokoro models)
+# Debian/Ubuntu
+sudo apt install portaudio19-dev
+
+# Fedora/RHEL
+sudo dnf install portaudio-devel
+```
+
+**2. Install the package**
+
+```bash
+pipx install "ascii-avatar[kokoro]"
+```
+
+Or from source with all TTS backends:
+
+```bash
+pipx install ".[all]"
+```
+
+**3. Download Kokoro models** (~338 MB, one-time)
+
+```bash
 bash scripts/install.sh
+```
 
-# 2. Start the avatar
-python -m avatar.main
+Models are cached to `~/.cache/ascii-avatar/models/`.
 
-# 3. Send a test event from another terminal
-python -m avatar.bridge.cli think
+**4. Start the avatar**
+
+```bash
+avatar --persona ghost
 ```
 
 Press `q` or `Esc` to quit.
 
-## Personas
+---
 
-| Persona | Voice Engine | Voice ID | Color | Personality | Frame Speed |
-|---------|-------------|----------|-------|-------------|-------------|
-| `ghost` (default) | Kokoro | af_bella | cyan | minimal | 1.0x |
-| `oracle` | Kokoro | bf_emma | amber | sage | 0.8x |
-| `spectre` | ElevenLabs | — | green | glitch | 1.3x |
+## Claude Code integration
 
-Select a persona with `--persona ghost|oracle|spectre`.
+### Hooks (automatic)
 
-## Requirements
+Hooks fire on every tool use, keeping the avatar in sync with Claude's activity. Add to `~/.claude/settings.json`:
 
-- Python 3.11+
-- `portaudio` system library (for audio output)
-  - Debian/Ubuntu: `sudo apt install portaudio19-dev`
-  - Fedora/RHEL: `sudo dnf install portaudio-devel`
-- Kokoro ONNX models (optional, downloaded by `scripts/install.sh`):
-  - `~/.cache/ascii-avatar/models/kokoro-v1.0.onnx`
-  - `~/.cache/ascii-avatar/models/voices-v1.0.bin`
-- ElevenLabs API key in `ELEVENLABS_API_KEY` (required only for `spectre` persona)
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      { "command": "avatar-bridge think" }
+    ],
+    "PostToolUse": [
+      { "command": "avatar-bridge idle" }
+    ],
+    "Notification": [
+      { "command": "avatar-bridge speak \"$CLAUDE_NOTIFICATION\"" }
+    ]
+  }
+}
+```
 
-The avatar runs in animation-only mode if Kokoro models are absent or `--no-voice` is passed.
+Run `bash scripts/setup-hooks.sh` to print this config with paths filled in.
+
+### MCP server (tool-based control)
+
+The MCP server lets Claude control its own avatar via tool calls. Add to `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "ascii-avatar": {
+      "command": "avatar-mcp"
+    }
+  }
+}
+```
+
+Available tools: `avatar_think`, `avatar_speak`, `avatar_listen`, `avatar_idle`.
+
+---
+
+## tmux setup
+
+To launch Claude Code and the avatar side-by-side automatically:
+
+```bash
+bash scripts/setup-tmux.sh
+source ~/.bashrc
+clauded-avatar
+```
+
+This creates a tmux session with the avatar in a 45-column split pane.
+
+---
+
+## CLI reference
+
+**Avatar process**
+
+```
+avatar [--persona ghost|oracle|spectre] [--socket PATH] [--no-voice]
+       [--no-color] [--voice VOICE_ID] [--audio-device INDEX]
+       [--compact] [--no-boot] [--portrait PATH] [--headless] [-v]
+```
+
+**Bridge (send events to a running avatar)**
+
+```
+avatar-bridge [--socket PATH] think|listen|idle
+avatar-bridge [--socket PATH] speak TEXT
+avatar-bridge [--socket PATH] error [MESSAGE]
+```
+
+---
+
+## Troubleshooting
+
+**"Kokoro model not found"** — run `bash scripts/install.sh`. The avatar continues in animation-only mode until models are present.
+
+**No audio / `sounddevice` error** — install `portaudio` system library before Python deps (see Quick start step 1).
+
+**Socket errors** — ensure the avatar process is running before sending events. The `--socket` path must match on both sides (default: `/tmp/ascii-avatar.sock`).
+
+**ElevenLabs not working** — set `ELEVENLABS_API_KEY` in your environment before starting the avatar.
+
+---
 
 ## License
 

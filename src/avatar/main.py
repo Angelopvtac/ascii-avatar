@@ -6,9 +6,11 @@ import argparse
 import logging
 import signal
 import sys
+import threading
 import time
 
 from avatar.event_bus import AvatarEvent, EventBus
+from avatar.frames.mouth_sync import MouthSync
 from avatar.personas import DEFAULT_PERSONA, get_persona, list_personas
 from avatar.renderer import AvatarRenderer
 from avatar.state_machine import AvatarState, AvatarStateMachine
@@ -71,6 +73,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Override audio output device index",
     )
     parser.add_argument("--compact", action="store_true", help="Compact mode")
+    parser.add_argument("--no-boot", action="store_true", help="Skip boot animation")
     parser.add_argument(
         "--portrait", default=None,
         help="Path to portrait image for avatar (overrides persona frame set)",
@@ -110,17 +113,21 @@ def main(argv: list[str] | None = None) -> None:
         tts = resolve_tts_engine(persona)
 
     audio_player = AudioPlayer()
+    mouth_sync = MouthSync()
 
     # State machine
     sm = AvatarStateMachine(idle_timeout=30)
 
     # Event bus
     bus = EventBus(socket_path=args.socket)
-    connected = False
+    last_event = ""
 
     def handle_event(event: AvatarEvent) -> None:
-        nonlocal connected
-        connected = True
+        nonlocal last_event
+        if event.event == "heartbeat":
+            last_event = "heartbeat"
+            return
+        last_event = event.event
         if event.event == "state_change":
             try:
                 new_state = AvatarState(event.state)
@@ -136,8 +143,11 @@ def main(argv: list[str] | None = None) -> None:
                         audio,
                         sample_rate=tts.sample_rate,
                         word_timings=timings,
-                        on_word=lambda wt: None,  # Could update mouth frame
-                        on_complete=lambda: sm.transition(AvatarState.IDLE),
+                        on_word=mouth_sync.on_word,
+                        on_complete=lambda: (
+                            mouth_sync.reset(),
+                            sm.transition(AvatarState.IDLE),
+                        ),
                     )
                 except Exception as e:
                     log.error("TTS failed: %s", e)
@@ -156,8 +166,27 @@ def main(argv: list[str] | None = None) -> None:
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
+    def _send_startup_ping(socket_path: str) -> None:
+        """Send a heartbeat ping after a short delay to confirm the socket is ready."""
+        import zmq as _zmq
+        time.sleep(0.5)
+        try:
+            ctx = _zmq.Context()
+            sock = ctx.socket(_zmq.PUSH)
+            sock.connect(f"ipc://{socket_path}")
+            sock.send_json({"event": "heartbeat"})
+            sock.close()
+            ctx.term()
+        except Exception as e:
+            log.debug("Startup ping failed: %s", e)
+
     # Start
     bus.start()
+    threading.Thread(
+        target=_send_startup_ping,
+        args=(args.socket,),
+        daemon=True,
+    ).start()
     log.info("Avatar started. Persona: %s. Socket: %s", persona.name, args.socket)
     log.info("TTS: %s", "enabled" if tts else "disabled (animation only)")
 
@@ -193,18 +222,30 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     frame_index = 0
-    last_event = ""
 
     try:
         with term.fullscreen(), term.hidden_cursor():
+            # Boot animation — plays once unless suppressed
+            if not args.no_boot:
+                from avatar.frames.boot import BOOT_FRAMES, BOOT_FRAME_RATE
+                for boot_frame in BOOT_FRAMES:
+                    if not running:
+                        break
+                    renderer.render_frame(boot_frame, " BOOTING... ")
+                    time.sleep(BOOT_FRAME_RATE)
+
             while running:
                 state = sm.state
-                frame = renderer.get_current_frame(state, frame_index)
+                frame = renderer.get_current_frame(
+                    state, frame_index,
+                    mouth_frame_override=mouth_sync.current_frame,
+                )
                 status = renderer.format_status_bar(
                     state=state,
-                    connected=connected,
+                    connected=bus.connected,
                     tts_loaded=tts is not None,
                     last_event=last_event,
+                    time_since_last_event=bus.time_since_last_event,
                 )
                 renderer.render_frame(frame, status)
 

@@ -74,14 +74,39 @@ class TestRenderer:
     def test_status_bar_content(self):
         term = FakeTerminal()
         r = AvatarRenderer(terminal=term, frame_set="cyberpunk")
-        bar = r.format_status_bar(
+
+        # Never received: waiting
+        bar_waiting = r.format_status_bar(
+            state=AvatarState.IDLE,
+            connected=False,
+            tts_loaded=False,
+            last_event="",
+            time_since_last_event=None,
+        )
+        assert "IDLE" in bar_waiting
+        assert "waiting" in bar_waiting
+
+        # Recent event: connected
+        bar_connected = r.format_status_bar(
             state=AvatarState.IDLE,
             connected=True,
             tts_loaded=False,
             last_event="state_change",
+            time_since_last_event=1.0,
         )
-        assert "IDLE" in bar
-        assert "connected" in bar.lower() or "●" in bar
+        assert "IDLE" in bar_connected
+        assert "● connected" in bar_connected
+        assert "stale" not in bar_connected
+
+        # Stale event: connected (stale)
+        bar_stale = r.format_status_bar(
+            state=AvatarState.IDLE,
+            connected=True,
+            tts_loaded=False,
+            last_event="state_change",
+            time_since_last_event=90.0,
+        )
+        assert "stale" in bar_stale
 
     def test_monochrome_fallback(self):
         term = FakeTerminal(colors=2)

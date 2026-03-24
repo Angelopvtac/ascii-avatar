@@ -32,11 +32,28 @@ class AvatarRenderer:
         self._modifier = frame_rate_modifier
         self._supports_color = getattr(terminal, "number_of_colors", 0) >= 256
 
-    def get_current_frame(self, state: AvatarState, frame_index: int) -> str:
+    def get_current_frame(
+        self,
+        state: AvatarState,
+        frame_index: int,
+        mouth_frame_override: int | None = None,
+    ) -> str:
+        """Return the frame string for *state* and *frame_index*.
+
+        Args:
+            state: Current avatar state.
+            frame_index: Animation cycle index (used when no override).
+            mouth_frame_override: When provided and state is SPEAKING, use
+                this index directly instead of *frame_index*.  Supplied by
+                :class:`~avatar.frames.mouth_sync.MouthSync`.
+        """
         frames = self._frames.get(state.value, self._frames["idle"])
         if not frames:
             frames = self._frames["idle"]
-        idx = frame_index % len(frames)
+        if mouth_frame_override is not None and state == AvatarState.SPEAKING:
+            idx = mouth_frame_override % len(frames)
+        else:
+            idx = frame_index % len(frames)
         frame = frames[idx]
         if not self._supports_color:
             frame = ANSI_ESCAPE.sub("", frame)
@@ -58,8 +75,14 @@ class AvatarRenderer:
         connected: bool,
         tts_loaded: bool,
         last_event: str = "",
+        time_since_last_event: float | None = None,
     ) -> str:
-        conn = "● connected" if connected else "○ waiting"
+        if time_since_last_event is None:
+            conn = "○ waiting"
+        elif time_since_last_event > 60:
+            conn = "● connected (stale)"
+        else:
+            conn = "● connected"
         tts = "♪ TTS" if tts_loaded else "♪ no TTS"
         return f" {state.value.upper()} │ {conn} │ {tts} │ last: {last_event} "
 

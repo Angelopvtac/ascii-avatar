@@ -113,3 +113,62 @@ class TestEventBus:
 
         # Should only have the valid event
         assert len(received) == 1
+
+    def test_connected_false_before_any_event(self, event_bus):
+        event_bus.start()
+        assert event_bus.connected is False
+
+    def test_connected_true_after_event(self, event_bus, socket_path):
+        event_bus.start()
+        time.sleep(0.1)
+
+        send_event(socket_path, {"event": "state_change", "state": "idle"})
+        time.sleep(0.2)
+
+        assert event_bus.connected is True
+
+    def test_last_event_time_none_before_any_event(self, event_bus):
+        event_bus.start()
+        assert event_bus.last_event_time is None
+
+    def test_last_event_time_set_after_event(self, event_bus, socket_path):
+        event_bus.start()
+        time.sleep(0.1)
+
+        before = time.monotonic()
+        send_event(socket_path, {"event": "state_change", "state": "idle"})
+        time.sleep(0.2)
+        after = time.monotonic()
+
+        assert event_bus.last_event_time is not None
+        assert before <= event_bus.last_event_time <= after
+
+    def test_time_since_last_event_none_before_any_event(self, event_bus):
+        event_bus.start()
+        assert event_bus.time_since_last_event is None
+
+    def test_time_since_last_event_small_after_recent_event(self, event_bus, socket_path):
+        event_bus.start()
+        time.sleep(0.1)
+
+        send_event(socket_path, {"event": "state_change", "state": "idle"})
+        time.sleep(0.2)
+
+        elapsed = event_bus.time_since_last_event
+        assert elapsed is not None
+        assert 0.0 <= elapsed < 5.0  # Should be very recent
+
+    def test_heartbeat_event_sets_connected(self, event_bus, socket_path):
+        received = []
+        event_bus.on_event = lambda e: received.append(e)
+        event_bus.start()
+        time.sleep(0.1)
+
+        send_event(socket_path, {"event": "heartbeat"})
+        time.sleep(0.2)
+
+        # connected is tracked at bus level via last_event_time
+        assert event_bus.connected is True
+        # heartbeat is dispatched to on_event like any other event
+        assert len(received) == 1
+        assert received[0].event == "heartbeat"
