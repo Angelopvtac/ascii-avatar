@@ -6,7 +6,11 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+import os
+
 from avatar.bridge.hooks import think, respond, listen, idle
+
+SOCKET_PATH = os.environ.get("AVATAR_SOCKET", "/tmp/ascii-avatar.sock")
 
 server = Server("ascii-avatar")
 
@@ -46,17 +50,17 @@ async def list_tools() -> list[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "avatar_think":
-        think()
+        think(socket_path=SOCKET_PATH)
         return [TextContent(type="text", text="Avatar: thinking")]
     elif name == "avatar_speak":
         text = arguments.get("text", "")
-        respond(text)
+        respond(text, socket_path=SOCKET_PATH)
         return [TextContent(type="text", text=f"Avatar: speaking '{text}'")]
     elif name == "avatar_listen":
-        listen()
+        listen(socket_path=SOCKET_PATH)
         return [TextContent(type="text", text="Avatar: listening")]
     elif name == "avatar_idle":
-        idle()
+        idle(socket_path=SOCKET_PATH)
         return [TextContent(type="text", text="Avatar: idle")]
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
