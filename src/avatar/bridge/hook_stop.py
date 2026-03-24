@@ -1,50 +1,23 @@
 #!/usr/bin/env python3
 """Hook script for Claude Code 'Stop' event.
 
-Reads the transcript, extracts the last assistant message,
-speaks a short summary via avatar, then switches to listen.
-
-Receives JSON on stdin with: session_id, transcript_path, cwd, etc.
+Reads last_assistant_message from hook input, speaks a summary,
+then switches avatar to listen state.
 """
 
 import json
 import sys
+import datetime
 from pathlib import Path
 
 from avatar.bridge.hooks import respond, listen
 
+LOG = Path("/tmp/avatar-hooks.log")
 
-def get_last_assistant_message(transcript_path: str) -> str:
-    """Read the JSONL transcript and return the last assistant text."""
-    path = Path(transcript_path)
-    if not path.exists():
-        return ""
 
-    last_text = ""
-    for line in path.read_text().strip().split("\n"):
-        if not line.strip():
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-
-        # Claude Code transcript format: look for assistant messages
-        if entry.get("role") == "assistant":
-            # Extract text content
-            content = entry.get("content", "")
-            if isinstance(content, str):
-                last_text = content
-            elif isinstance(content, list):
-                # Content blocks — extract text blocks
-                texts = []
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        texts.append(block.get("text", ""))
-                if texts:
-                    last_text = " ".join(texts)
-
-    return last_text
+def log(msg: str):
+    with open(LOG, "a") as f:
+        f.write(f"{datetime.datetime.now().isoformat()} [stop] {msg}\n")
 
 
 def summarize_for_speech(text: str, max_chars: int = 200) -> str:
@@ -52,11 +25,12 @@ def summarize_for_speech(text: str, max_chars: int = 200) -> str:
     if not text:
         return ""
 
-    # Strip markdown formatting
     text = text.replace("**", "").replace("```", "").replace("`", "")
     text = text.replace("#", "").strip()
 
-    # Take first 1-2 sentences
+    # Collapse whitespace
+    text = " ".join(text.split())
+
     sentences = []
     current = ""
     for char in text:
@@ -70,40 +44,46 @@ def summarize_for_speech(text: str, max_chars: int = 200) -> str:
     if sentences:
         result = " ".join(sentences)
     else:
-        # No sentence boundaries — take first chunk
         result = text[:max_chars]
 
     return result[:max_chars].strip()
 
 
 def main():
-    # Read hook input from stdin
+    log("hook fired")
+
     try:
-        hook_input = json.load(sys.stdin)
-    except (json.JSONDecodeError, EOFError):
+        stdin_data = sys.stdin.read()
+        log(f"stdin keys: {list(json.loads(stdin_data).keys()) if stdin_data.strip() else 'empty'}")
+        hook_input = json.loads(stdin_data) if stdin_data.strip() else {}
+    except (json.JSONDecodeError, EOFError) as e:
+        log(f"stdin parse error: {e}")
         hook_input = {}
 
-    transcript_path = hook_input.get("transcript_path", "")
     socket_path = "/tmp/ascii-avatar.sock"
 
-    if not transcript_path:
-        listen(socket_path=socket_path)
-        return
+    # Claude Code provides last_assistant_message directly in the hook input
+    last_message = hook_input.get("last_assistant_message", "")
+    log(f"last_assistant_message length: {len(last_message)}")
+    log(f"first 200 chars: {last_message[:200]}")
 
-    # Get last assistant message
-    text = get_last_assistant_message(transcript_path)
-    speech = summarize_for_speech(text)
+    speech = summarize_for_speech(last_message)
+    log(f"speech: {speech[:100]}")
 
     if speech:
         try:
             respond(speech, socket_path=socket_path)
-        except Exception:
-            pass  # Avatar not running — that's fine
+            log("speak sent OK")
+        except Exception as e:
+            log(f"speak failed: {e}")
+    else:
+        log("no speech to send")
 
     try:
         listen(socket_path=socket_path)
-    except Exception:
-        pass
+        log("listen sent OK")
+    except Exception as e:
+        log(f"listen failed: {e}")
 
 
 if __name__ == "__main__":
