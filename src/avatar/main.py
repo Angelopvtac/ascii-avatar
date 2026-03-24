@@ -72,6 +72,10 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--compact", action="store_true", help="Compact mode")
     parser.add_argument(
+        "--portrait", default=None,
+        help="Path to portrait image for avatar (overrides persona frame set)",
+    )
+    parser.add_argument(
         "--headless", action="store_true",
         help="Headless mode: run event bus and state machine without terminal rendering (for testing)",
     )
@@ -175,9 +179,16 @@ def main(argv: list[str] | None = None) -> None:
     term = blessed.Terminal()
     if args.no_color:
         term.number_of_colors = 2
+    # Determine frame set: --portrait overrides persona frames
+    frame_set = persona.frames
+    if args.portrait:
+        frame_set = f"portrait:{args.portrait}"
+    elif persona.frames == "portrait":
+        frame_set = "portrait"
+
     renderer = AvatarRenderer(
         terminal=term,
-        frame_set=persona.frames,
+        frame_set=frame_set,
         frame_rate_modifier=persona.frame_rate_modifier,
     )
 
