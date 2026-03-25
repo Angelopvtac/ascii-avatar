@@ -249,6 +249,18 @@ if [ "$INSTALL_HOOKS" = true ]; then
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOOK_PREFIX.hook_tool",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "",
@@ -342,6 +354,9 @@ cat > "\$WORKSPACE/.claude/settings.local.json" << 'INNEREOF'
   "hooks": {
     "UserPromptSubmit": [
       { "matcher": "", "hooks": [{ "type": "command", "command": "$PIPX_PYTHON -m avatar.bridge.hook_think", "timeout": 3000 }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "$PIPX_PYTHON -m avatar.bridge.hook_tool", "timeout": 5000 }] }
     ],
     "Notification": [
       { "matcher": "", "hooks": [{ "type": "command", "command": "$PIPX_PYTHON -m avatar.bridge.hook_notify", "timeout": 10000 }] }

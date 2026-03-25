@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Hook script for Claude Code 'Stop' event.
 
-Reads last_assistant_message from hook input, transforms it into
-a spoken status update via Haiku, speaks it, then switches to listen.
+Reads last_assistant_message from hook input, generates a natural
+spoken summary (via Haiku or local heuristics), speaks it, then
+switches to listening state.
 """
 
 import json
@@ -36,8 +37,12 @@ def main():
     last_message = hook_input.get("last_assistant_message", "")
     log(f"last_assistant_message length: {len(last_message)}")
 
+    # Log first 200 chars for debugging
+    if last_message:
+        log(f"preview: {last_message[:200]}")
+
     speech = summarize_for_voice(last_message)
-    log(f"speech: {speech}")
+    log(f"speech ({len(speech)} chars): {speech}")
 
     if speech:
         try:

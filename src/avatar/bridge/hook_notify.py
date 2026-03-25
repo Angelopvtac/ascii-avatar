@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Hook script for Claude Code 'Notification' event.
 
-Speaks the notification aloud so the user knows Claude needs attention
-without looking at the screen.
+Speaks notifications with varied, natural phrasing instead of
+the same robotic line every time.
 """
 
 import json
+import random
 import sys
 import datetime
 from pathlib import Path
@@ -13,6 +14,25 @@ from pathlib import Path
 from avatar.bridge.hooks import respond
 
 LOG = Path("/tmp/avatar-hooks.log")
+
+# Varied idle phrases — rotated to avoid repetition
+_IDLE_PHRASES = [
+    "Done. Your turn.",
+    "Finished up. Over to you.",
+    "All yours.",
+    "That's done. What's next?",
+    "Ready when you are.",
+    "Standing by.",
+    "Wrapped up. Waiting on you.",
+    "I'm here. Go ahead.",
+]
+
+_PERMISSION_PHRASES = [
+    "I need your go-ahead to continue.",
+    "Waiting for permission.",
+    "Need your approval on this one.",
+    "Can I proceed?",
+]
 
 
 def log(msg: str):
@@ -36,16 +56,15 @@ def main():
 
     log(f"type: {notification_type}, message: {message[:100]}")
 
-    # Speak contextually based on notification type
     if notification_type == "permission_prompt":
-        speech = "I need your permission to continue."
+        speech = random.choice(_PERMISSION_PHRASES)
     elif notification_type == "idle_prompt":
-        speech = "I'm done. Waiting for you."
+        speech = random.choice(_IDLE_PHRASES)
     elif message:
         # Trim to something speakable
         speech = message[:150]
     else:
-        speech = "Hey, I need your attention."
+        speech = "Hey. Need your attention."
 
     try:
         respond(speech, socket_path=socket_path)
