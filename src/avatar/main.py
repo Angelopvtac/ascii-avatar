@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 
+from avatar.animation import AnimationCompositor
 from avatar.event_bus import AvatarEvent, EventBus
 from avatar.frames.mouth_sync import MouthSync
 from avatar.personas import DEFAULT_PERSONA, get_persona, list_personas
@@ -77,6 +78,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--portrait", default=None,
         help="Path to portrait image for avatar (overrides persona frame set)",
+    )
+    parser.add_argument(
+        "--charset", default=None,
+        choices=["auto", "density", "halfblock", "halfblock_rgb", "braille", "braille_rgb", "sixel"],
+        help="Rendering charset (default: auto). Fidelity: sixel > braille > halfblock_rgb > halfblock > density. 'auto' picks the best your terminal supports.",
     )
     parser.add_argument(
         "--headless", action="store_true",
@@ -219,6 +225,14 @@ def main(argv: list[str] | None = None) -> None:
         terminal=term,
         frame_set=frame_set,
         frame_rate_modifier=persona.frame_rate_modifier,
+        charset=args.charset,
+    )
+
+    # Create the animation compositor for micro-event overlays
+    compositor = AnimationCompositor(renderer._frames, renderer._rates)
+    log.info(
+        "Animation compositor: %d overlay types available",
+        len(compositor._overlay_counts),
     )
 
     frame_index = 0
@@ -236,10 +250,21 @@ def main(argv: list[str] | None = None) -> None:
 
             while running:
                 state = sm.state
-                frame = renderer.get_current_frame(
-                    state, frame_index,
+                state_val = state.value
+
+                # Use compositor for frame selection — handles micro-events
+                frame = compositor.get_frame(
+                    state_val, frame_index,
                     mouth_frame_override=mouth_sync.current_frame,
                 )
+
+                # Fall back to renderer if compositor returns empty
+                if not frame:
+                    frame = renderer.get_current_frame(
+                        state, frame_index,
+                        mouth_frame_override=mouth_sync.current_frame,
+                    )
+
                 status = renderer.format_status_bar(
                     state=state,
                     connected=bus.connected,
@@ -249,7 +274,8 @@ def main(argv: list[str] | None = None) -> None:
                 )
                 renderer.render_frame(frame, status)
 
-                rate = renderer.get_frame_rate(state)
+                # Use compositor's rate (faster during micro-events)
+                rate = compositor.get_frame_rate(state_val) * persona.frame_rate_modifier
                 time.sleep(rate)
                 frame_index = renderer.next_frame_index(state, frame_index)
 
