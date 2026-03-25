@@ -1,14 +1,26 @@
 """ASCII art frame set loader.
 
-Supports two modes:
+Supports multiple modes:
 - "cyberpunk": hand-crafted ASCII art frames (legacy)
 - "portrait": image-to-ASCII converted frames from a portrait image
 - "portrait:<path>": custom image as avatar source
+
+Charset hierarchy (lowest → highest fidelity):
+  density → halfblock → halfblock_rgb → braille → braille_rgb → sixel
+
+When charset="sixel" (or "auto" resolves to sixel), frames are
+pixel-perfect images encoded via the sixel graphics protocol —
+full source resolution, no character approximation at all.
 """
 
 from __future__ import annotations
 
+import logging
+import os
+import shutil
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 FRAME_RATES = {
     "idle": 0.8,
@@ -18,18 +30,54 @@ FRAME_RATES = {
     "error": 0.2,
 }
 
+# When "auto", sixel is used if the terminal supports it, else braille.
+DEFAULT_CHARSET = "auto"
+
+
+def _detect_terminal_size() -> tuple[int, int]:
+    """Return (columns, rows) for the avatar pane.
+
+    Falls back to sensible defaults if detection fails.
+    Reserve 1 row for the status bar.
+    """
+    try:
+        cols, rows = shutil.get_terminal_size(fallback=(60, 35))
+    except Exception:
+        cols, rows = 60, 35
+    # Reserve 2 rows for status bar + margin
+    return cols, max(rows - 2, 10)
+
+
+def _resolve_charset(charset: str) -> str:
+    """Resolve 'auto' to the best charset for the current terminal."""
+    if charset != "auto":
+        return charset
+    try:
+        from avatar.frames.sixel import terminal_supports_sixel
+        if terminal_supports_sixel():
+            log.info("Auto-detected sixel support — using pixel graphics")
+            return "sixel"
+    except Exception:
+        pass
+    log.info("Sixel not available — falling back to braille")
+    return "braille"
+
 
 def load_frame_set(
     name: str,
-    width: int = 45,
-    height: int = 22,
+    width: int | None = None,
+    height: int | None = None,
+    charset: str | None = None,
 ) -> tuple[dict[str, list[str]], dict[str, float]]:
     """Load a frame set by name.
 
     Args:
         name: "cyberpunk", "portrait", or "portrait:/path/to/image.png"
-        width: ASCII art width in characters (for portrait mode).
-        height: ASCII art height in lines (for portrait mode).
+        width: ASCII art width in characters.  ``None`` = auto-detect.
+        height: ASCII art height in lines.  ``None`` = auto-detect.
+        charset: Override rendering charset.  ``None`` = DEFAULT_CHARSET.
+            Use "auto" to pick the highest-fidelity mode the terminal supports.
+            Use "sixel" to force pixel graphics.
 
     Returns:
         (frames_dict, rates_dict)
@@ -39,19 +87,21 @@ def load_frame_set(
         return FRAMES, RATES
 
     if name.startswith("portrait"):
-        return _load_portrait_frames(name, width, height)
+        return _load_portrait_frames(name, width, height, charset)
 
     raise KeyError(f"Unknown frame set: {name}")
 
 
 def _load_portrait_frames(
     name: str,
-    width: int,
-    height: int,
+    width: int | None,
+    height: int | None,
+    charset: str | None,
 ) -> tuple[dict[str, list[str]], dict[str, float]]:
     """Load portrait-based frames from an image or generate default."""
     from PIL import Image
-    from avatar.frames.converter import generate_state_frames
+
+    charset = _resolve_charset(charset or DEFAULT_CHARSET)
 
     # Parse custom image path: "portrait:/path/to/image.png"
     if ":" in name and name != "portrait":
@@ -61,9 +111,78 @@ def _load_portrait_frames(
             raise FileNotFoundError(f"Portrait image not found: {path}")
         base_image = Image.open(path)
     else:
-        # Use default generated portrait
         from avatar.frames.portrait import generate_default_portrait
         base_image = generate_default_portrait()
 
-    frames = generate_state_frames(base_image, width, height, charset="density")
+    # --- Sixel path: pixel-perfect frames ---
+    if charset == "sixel":
+        return _load_sixel_frames(base_image, width, height)
+
+    # --- Character-based path ---
+    from avatar.frames.converter import generate_state_frames
+
+    if width is None or height is None:
+        auto_w, auto_h = _detect_terminal_size()
+        width = width or auto_w
+        height = height or auto_h
+
+    frames = generate_state_frames(base_image, width, height, charset=charset)
+    return frames, FRAME_RATES
+
+
+def _load_sixel_frames(
+    base_image: "Image.Image",
+    width: int | None,
+    height: int | None,
+) -> tuple[dict[str, list[str]], dict[str, float]]:
+    """Generate sixel pixel-graphics frames.
+
+    Determines pixel dimensions from terminal ioctl or falls back to
+    character-cell estimation.
+    """
+    from avatar.frames.sixel import (
+        generate_sixel_state_frames,
+        get_terminal_cell_size,
+        get_terminal_pixel_size,
+    )
+
+    # Try to get actual pixel dimensions of the avatar pane
+    pixel_size = get_terminal_pixel_size()
+    cell_size = get_terminal_cell_size()
+
+    if pixel_size and pixel_size[0] > 0:
+        px_w, px_h = pixel_size
+        # Leave room for status bar (1 row of cells)
+        if cell_size:
+            px_h -= cell_size[1] * 2
+        px_h = max(px_h, 100)
+        log.info("Sixel: using terminal pixel size %d×%d", px_w, px_h)
+    else:
+        # Estimate from character cells — assume 8×16 px per cell
+        if width is None or height is None:
+            auto_w, auto_h = _detect_terminal_size()
+            width = width or auto_w
+            height = height or auto_h
+        cell_w = 8
+        cell_h = 16
+        px_w = width * cell_w
+        px_h = height * cell_h
+        log.info("Sixel: estimated pixel size %d×%d (%d×%d cells)", px_w, px_h, width, height)
+
+    # Maintain aspect ratio of source image
+    src_w, src_h = base_image.size
+    aspect = src_w / src_h
+    if px_w / px_h > aspect:
+        # Terminal is wider than image — fit to height
+        px_w = int(px_h * aspect)
+    else:
+        # Terminal is taller — fit to width
+        px_h = int(px_w / aspect)
+
+    frames = generate_sixel_state_frames(
+        base_image,
+        pixel_width=px_w,
+        pixel_height=px_h,
+        max_colors=128,
+    )
     return frames, FRAME_RATES
