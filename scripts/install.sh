@@ -19,6 +19,9 @@ mkdir -p "$MODEL_DIR"
 
 RELEASE_URL="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
 
+ONNX_SHA256="7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5"
+VOICES_SHA256="bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d"
+
 echo "[2/3] Downloading Kokoro TTS models..."
 if [ ! -f "$MODEL_DIR/kokoro-v1.0.onnx" ]; then
     echo "  Downloading kokoro-v1.0.onnx (~311MB)..."
@@ -33,6 +36,11 @@ if [ ! -f "$MODEL_DIR/voices-v1.0.bin" ]; then
 else
     echo "  voices-v1.0.bin already exists."
 fi
+
+echo "  Verifying checksums..."
+echo "$ONNX_SHA256  $MODEL_DIR/kokoro-v1.0.onnx" | sha256sum -c --quiet || { echo "ERROR: kokoro-v1.0.onnx checksum mismatch"; exit 1; }
+echo "$VOICES_SHA256  $MODEL_DIR/voices-v1.0.bin" | sha256sum -c --quiet || { echo "ERROR: voices-v1.0.bin checksum mismatch"; exit 1; }
+echo "  Checksums verified."
 
 # Python deps
 echo "[3/3] Installing Python dependencies..."

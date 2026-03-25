@@ -39,6 +39,10 @@ def get_socket_path() -> str:
     """Resolve the ZeroMQ socket path."""
     env = os.environ.get("AVATAR_SOCKET")
     if env:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Using non-default socket path from AVATAR_SOCKET: %s", env
+        )
         return env
     return str(_runtime_dir() / "ascii-avatar.sock")
 

@@ -106,7 +106,11 @@ def _load_portrait_frames(
     # Parse custom image path: "portrait:/path/to/image.png"
     if ":" in name and name != "portrait":
         image_path = name.split(":", 1)[1]
-        path = Path(image_path)
+        path = Path(image_path).resolve()
+        # Restrict to home directory to prevent arbitrary file reads
+        home = Path.home().resolve()
+        if not str(path).startswith(str(home)):
+            raise ValueError(f"Portrait path must be under home directory: {path}")
         if not path.exists():
             raise FileNotFoundError(f"Portrait image not found: {path}")
         base_image = Image.open(path)

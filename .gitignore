@@ -6,6 +6,9 @@ dist/
 build/
 .venv/
 .env
+.env.*
+*.pem
+*.key
 *.lock
 .pytest_cache/
 .mypy_cache/

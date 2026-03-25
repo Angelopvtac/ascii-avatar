@@ -191,6 +191,9 @@ if [ "$INSTALL_TTS" = true ]; then
                 DL_CMD="wget -q --show-progress -O"
             fi
 
+            ONNX_SHA256="7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5"
+            VOICES_SHA256="bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d"
+
             if [ ! -f "$MODEL_DIR/kokoro-v1.0.onnx" ]; then
                 info "Downloading kokoro-v1.0.onnx (~311 MB)..."
                 $DL_CMD "$MODEL_DIR/kokoro-v1.0.onnx" "$RELEASE_URL/kokoro-v1.0.onnx"
@@ -200,7 +203,12 @@ if [ "$INSTALL_TTS" = true ]; then
                 info "Downloading voices-v1.0.bin (~27 MB)..."
                 $DL_CMD "$MODEL_DIR/voices-v1.0.bin" "$RELEASE_URL/voices-v1.0.bin"
             fi
-            ok "TTS models ready at $MODEL_DIR"
+
+            # Verify checksums
+            info "Verifying model checksums..."
+            echo "$ONNX_SHA256  $MODEL_DIR/kokoro-v1.0.onnx" | sha256sum -c --quiet 2>/dev/null || { warn "kokoro-v1.0.onnx checksum mismatch — file may be corrupted"; rm -f "$MODEL_DIR/kokoro-v1.0.onnx"; exit 1; }
+            echo "$VOICES_SHA256  $MODEL_DIR/voices-v1.0.bin" | sha256sum -c --quiet 2>/dev/null || { warn "voices-v1.0.bin checksum mismatch — file may be corrupted"; rm -f "$MODEL_DIR/voices-v1.0.bin"; exit 1; }
+            ok "TTS models verified and ready at $MODEL_DIR"
         fi
     fi
 fi
