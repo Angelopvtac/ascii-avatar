@@ -6,11 +6,10 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-import os
-
 from avatar.bridge.hooks import think, respond, listen, idle
+from avatar.bridge.paths import get_socket_path
 
-SOCKET_PATH = os.environ.get("AVATAR_SOCKET", "/tmp/ascii-avatar.sock")
+SOCKET_PATH = get_socket_path()
 
 server = Server("ascii-avatar")
 

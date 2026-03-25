@@ -12,9 +12,11 @@ from typing import Any, Callable
 
 import zmq
 
+from avatar.bridge.paths import get_socket_path
+
 log = logging.getLogger(__name__)
 
-DEFAULT_SOCKET_PATH = "/tmp/ascii-avatar.sock"
+DEFAULT_SOCKET_PATH = get_socket_path()
 
 
 @dataclass

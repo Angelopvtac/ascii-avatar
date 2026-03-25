@@ -9,7 +9,14 @@ if [ -d .venv ]; then
 fi
 
 CLI="python -m avatar.bridge.cli"
-SOCKET="/tmp/ascii-avatar-demo.sock"
+# Socket path matches paths.py: XDG_RUNTIME_DIR > ~/.local/share fallback
+if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    _RTDIR="$XDG_RUNTIME_DIR/ascii-avatar"
+else
+    _RTDIR="$HOME/.local/share/ascii-avatar"
+fi
+mkdir -p "$_RTDIR" && chmod 700 "$_RTDIR"
+SOCKET="$_RTDIR/ascii-avatar-demo.sock"
 
 echo "=== ASCII Avatar Demo ==="
 echo "Starting avatar process..."

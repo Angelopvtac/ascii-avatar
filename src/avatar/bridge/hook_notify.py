@@ -9,11 +9,11 @@ import json
 import random
 import sys
 import datetime
-from pathlib import Path
 
 from avatar.bridge.hooks import respond
+from avatar.bridge.paths import get_log_path, get_socket_path
 
-LOG = Path("/tmp/avatar-hooks.log")
+LOG = get_log_path()
 
 # Varied idle phrases — rotated to avoid repetition
 _IDLE_PHRASES = [
@@ -50,7 +50,7 @@ def main():
         log(f"stdin parse error: {e}")
         hook_input = {}
 
-    socket_path = "/tmp/ascii-avatar.sock"
+    socket_path = get_socket_path()
     notification_type = hook_input.get("notification_type", "")
     message = hook_input.get("message", "")
 
@@ -61,7 +61,6 @@ def main():
     elif notification_type == "idle_prompt":
         speech = random.choice(_IDLE_PHRASES)
     elif message:
-        # Trim to something speakable
         speech = message[:150]
     else:
         speech = "Hey. Need your attention."

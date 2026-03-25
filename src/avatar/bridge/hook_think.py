@@ -7,9 +7,10 @@ Signals the avatar to start thinking when the user sends a message.
 import json
 import sys
 import datetime
-from pathlib import Path
 
-LOG = Path("/tmp/avatar-hooks.log")
+from avatar.bridge.paths import get_log_path, get_socket_path
+
+LOG = get_log_path()
 
 
 def log(msg: str):
@@ -27,7 +28,7 @@ def main():
 
     try:
         from avatar.bridge.hooks import think
-        think(socket_path="/tmp/ascii-avatar.sock")
+        think(socket_path=get_socket_path())
         log("think sent OK")
     except Exception as e:
         log(f"think failed: {e}")

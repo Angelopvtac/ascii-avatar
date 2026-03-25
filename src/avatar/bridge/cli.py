@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from avatar.bridge import hooks
+from avatar.bridge.paths import get_socket_path
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -12,7 +13,7 @@ def main(argv: list[str] | None = None) -> None:
         description="Send events to the ASCII avatar process",
     )
     parser.add_argument(
-        "--socket", default="/tmp/ascii-avatar.sock",
+        "--socket", default=get_socket_path(),
         help="Path to the avatar Unix socket",
     )
 

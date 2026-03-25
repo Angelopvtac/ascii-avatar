@@ -324,15 +324,20 @@ if [ "$INSTALL_TMUX" = true ]; then
 
     AVATAR_CMD="$(which avatar 2>/dev/null || echo "$HOME/.local/bin/avatar")"
     CLAUDE_CMD="$(which claude 2>/dev/null || echo "claude")"
-    SOCKET="/tmp/ascii-avatar.sock"
-
     cat > "$LAUNCHER_DIR/avatar-start.sh" << LAUNCHEOF
 #!/bin/bash
 # ASCII Avatar + Claude Code tmux launcher
 # Usage: bash ~/.claude/agents/avatar-start.sh [--yolo]
 set -euo pipefail
 
-SOCKET="$SOCKET"
+# Socket path matches paths.py: XDG_RUNTIME_DIR > ~/.local/share fallback
+if [ -n "\${XDG_RUNTIME_DIR:-}" ]; then
+    AVATAR_RUNTIME="\$XDG_RUNTIME_DIR/ascii-avatar"
+else
+    AVATAR_RUNTIME="\$HOME/.local/share/ascii-avatar"
+fi
+mkdir -p "\$AVATAR_RUNTIME" && chmod 700 "\$AVATAR_RUNTIME"
+SOCKET="\${AVATAR_SOCKET:-\$AVATAR_RUNTIME/ascii-avatar.sock}"
 CLAUDE="$CLAUDE_CMD"
 AVATAR="$AVATAR_CMD"
 PIPX_PY="$PIPX_PYTHON"

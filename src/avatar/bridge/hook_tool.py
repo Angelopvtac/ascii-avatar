@@ -13,10 +13,11 @@ import json
 import sys
 import time
 import datetime
-from pathlib import Path
 
-LOG = Path("/tmp/avatar-hooks.log")
-THROTTLE_FILE = Path("/tmp/avatar-last-tool-speech")
+from avatar.bridge.paths import get_log_path, get_socket_path, get_throttle_path
+
+LOG = get_log_path()
+THROTTLE_FILE = get_throttle_path()
 THROTTLE_SECONDS = 8  # minimum gap between tool narrations
 
 
@@ -63,13 +64,12 @@ def main():
         return
 
     # Don't narrate very fast tools (they'd overlap with the next one)
-    # Only narrate substantive tools
     skip_tools = {"todoread", "todowrite", "taskoutput", "sendmessage"}
     if tool_name.lower() in skip_tools:
         log(f"skipping trivial tool: {tool_name}")
         return
 
-    socket_path = "/tmp/ascii-avatar.sock"
+    socket_path = get_socket_path()
 
     try:
         from avatar.voice.summarizer import tool_narration

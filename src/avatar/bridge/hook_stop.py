@@ -9,12 +9,12 @@ switches to listening state.
 import json
 import sys
 import datetime
-from pathlib import Path
 
 from avatar.bridge.hooks import respond, listen
+from avatar.bridge.paths import get_log_path, get_socket_path
 from avatar.voice.summarizer import summarize_for_voice
 
-LOG = Path("/tmp/avatar-hooks.log")
+LOG = get_log_path()
 
 
 def log(msg: str):
@@ -32,14 +32,10 @@ def main():
         log(f"stdin parse error: {e}")
         hook_input = {}
 
-    socket_path = "/tmp/ascii-avatar.sock"
+    socket_path = get_socket_path()
 
     last_message = hook_input.get("last_assistant_message", "")
     log(f"last_assistant_message length: {len(last_message)}")
-
-    # Log first 200 chars for debugging
-    if last_message:
-        log(f"preview: {last_message[:200]}")
 
     speech = summarize_for_voice(last_message)
     log(f"speech ({len(speech)} chars): {speech}")

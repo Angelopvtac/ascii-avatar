@@ -10,6 +10,7 @@ import threading
 import time
 
 from avatar.animation import AnimationCompositor
+from avatar.bridge.paths import get_socket_path
 from avatar.event_bus import AvatarEvent, EventBus
 from avatar.frames.mouth_sync import MouthSync
 from avatar.personas import DEFAULT_PERSONA, get_persona, list_personas
@@ -60,7 +61,7 @@ def main(argv: list[str] | None = None) -> None:
         help=f"Persona preset (default: {DEFAULT_PERSONA})",
     )
     parser.add_argument(
-        "--socket", default="/tmp/ascii-avatar.sock",
+        "--socket", default=get_socket_path(),
         help="Unix socket path for event bus",
     )
     parser.add_argument("--no-voice", action="store_true", help="Disable TTS")
