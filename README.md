@@ -96,41 +96,49 @@ Claude Code pushes events over a Unix socket (ZeroMQ PUSH/PULL). The avatar pull
 
 ## Quick start
 
-**1. Install system dependency**
+**One command** installs the package, downloads TTS models, configures Claude Code hooks, and sets up the tmux launcher:
 
 ```bash
-# Debian/Ubuntu
-sudo apt install portaudio19-dev
+# Install portaudio first (required for TTS audio)
+sudo apt install portaudio19-dev   # Debian/Ubuntu
+sudo dnf install portaudio-devel   # Fedora/RHEL
 
-# Fedora/RHEL
-sudo dnf install portaudio-devel
+# Then install everything
+curl -sSL https://raw.githubusercontent.com/Angelopvtac/ascii-avatar/master/install.sh | bash
 ```
 
-**2. Install the package**
+That's it. Start using it:
 
 ```bash
-pipx install "ascii-avatar[kokoro]"
+avatar-session       # tmux: Claude Code + avatar side-by-side
+avatar               # standalone avatar process
 ```
 
-Or from source with all TTS backends:
+<details>
+<summary>Manual install (step-by-step)</summary>
 
 ```bash
-pipx install ".[all]"
+pipx install "git+https://github.com/Angelopvtac/ascii-avatar.git[kokoro]"
+bash scripts/install.sh          # download TTS models
+bash scripts/setup-hooks.sh      # print Claude Code hook config
+bash scripts/setup-tmux.sh       # add tmux alias
 ```
+</details>
 
-**3. Download Kokoro models** (~338 MB, one-time)
+<details>
+<summary>Install options</summary>
 
 ```bash
-bash scripts/install.sh
+# Skip TTS (animation only, no voice)
+curl -sSL .../install.sh | bash -s -- --no-tts
+
+# Skip Claude Code hooks setup
+curl -sSL .../install.sh | bash -s -- --no-hooks
+
+# Uninstall everything
+curl -sSL .../install.sh | bash -s -- --uninstall
 ```
-
-Models are cached to `~/.cache/ascii-avatar/models/`.
-
-**4. Start the avatar**
-
-```bash
-avatar --persona ghost
-```
+</details>
 
 Press `q` or `Esc` to quit.
 
