@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import pickle
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -361,3 +362,102 @@ class LayerCompositor:
 
         graded = _apply_gits_color_grade(canvas)
         return graded
+
+
+# Maps face variant names to head angle keywords used by LayerCompositor.composite().
+_FACE_TO_ANGLE: dict[str, str] = {
+    "center": "center",
+    "left15": "left",
+    "right15": "right",
+    "up10": "up",
+    "down10": "down",
+}
+
+# Animation frame rates (frames per second) for each avatar state.
+FRAME_RATES: dict[str, float] = {
+    "idle": 0.8,
+    "thinking": 0.15,
+    "speaking": 0.1,
+    "listening": 0.4,
+    "error": 0.2,
+}
+
+
+class FrameAtlasBuilder:
+    """Builds and caches a full sixel frame atlas for all avatar states."""
+
+    def __init__(
+        self,
+        assets_dir: Path | None = None,
+        cache_dir: Path | None = None,
+        pixel_width: int = 512,
+        pixel_height: int = 512,
+        max_colors: int = 128,
+    ) -> None:
+        self.assets_dir = Path(assets_dir) if assets_dir is not None else ASSETS_DIR
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else CACHE_DIR
+        self.pixel_width = pixel_width
+        self.pixel_height = pixel_height
+        self.max_colors = max_colors
+
+    def _cache_key(self) -> str:
+        """Compute a SHA-256 cache key from dimensions and all layer file contents."""
+        h = hashlib.sha256()
+        h.update(f"{self.pixel_width}x{self.pixel_height}x{self.max_colors}".encode())
+        for layer_name, layer_def in sorted(LAYER_DEFS.items()):
+            for variant in layer_def["variants"]:
+                file_path = self.assets_dir / variant["file"]
+                try:
+                    h.update(file_path.read_bytes())
+                except FileNotFoundError:
+                    h.update(str(file_path).encode())
+        return h.hexdigest()
+
+    def _cache_path(self) -> Path:
+        key = self._cache_key()
+        return self.cache_dir / key[:16] / "atlas.pkl"
+
+    def _load_cache(self) -> dict | None:
+        path = self._cache_path()
+        try:
+            with open(path, "rb") as f:
+                return pickle.load(f)
+        except Exception:
+            return None
+
+    def _save_cache(self, frames: dict) -> None:
+        path = self._cache_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump(frames, f)
+
+    def build(self) -> tuple[dict[str, list[str]], dict[str, float]]:
+        """Build or load the frame atlas.
+
+        Returns:
+            (frames, FRAME_RATES) where frames maps state name -> list of sixel strings.
+        """
+        from avatar.frames.sixel import encode_sixel
+
+        cached = self._load_cache()
+        if cached is not None:
+            return cached, FRAME_RATES
+
+        compositor = LayerCompositor(self.assets_dir)
+        frames: dict[str, list[str]] = {}
+
+        for state, combos in STATE_FRAME_MAP.items():
+            state_frames: list[str] = []
+            for combo in combos:
+                # Infer head angle from the face variant in this combo.
+                face_variant = combo.get("face", "center")
+                head_angle = _FACE_TO_ANGLE.get(face_variant, "center")
+
+                img = compositor.composite(combo, head_angle)
+                img = img.resize((self.pixel_width, self.pixel_height), Image.LANCZOS)
+                sixel_str = encode_sixel(img, max_colors=self.max_colors)
+                state_frames.append(sixel_str)
+            frames[state] = state_frames
+
+        self._save_cache(frames)
+        return frames, FRAME_RATES
