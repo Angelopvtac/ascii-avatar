@@ -172,3 +172,76 @@ class TestFrameAtlasBuilder:
         expected = {"idle": 0.8, "thinking": 0.15, "speaking": 0.1, "listening": 0.4, "error": 0.2}
         for state, rate in expected.items():
             assert rates[state] == rate, f"Rate mismatch for {state}: {rates[state]} != {rate}"
+
+
+class TestEndToEnd:
+    @pytest.fixture
+    def real_assets(self):
+        """Use the actual generated assets if they exist."""
+        from avatar.frames.layered import ASSETS_DIR
+        if not ASSETS_DIR.exists():
+            pytest.skip("Assets not generated yet — run scripts/generate_layers.py")
+        return ASSETS_DIR
+
+    @pytest.mark.integration
+    def test_full_pipeline_with_real_assets(self, real_assets, tmp_path):
+        from avatar.frames.layered import FrameAtlasBuilder
+        builder = FrameAtlasBuilder(
+            assets_dir=real_assets,
+            cache_dir=tmp_path / "cache",
+            pixel_width=256,
+            pixel_height=256,
+        )
+        frames, rates = builder.build()
+
+        # All states present
+        for state in ["idle", "thinking", "speaking", "listening", "error"]:
+            assert state in frames
+            assert len(frames[state]) >= 1
+            # Each frame is a sixel string (starts with ESC P)
+            assert frames[state][0].startswith("\033P") or frames[state][0].startswith("\033Ptmux")
+
+        # Micro-events present
+        for event in ["blink", "glitch", "flicker"]:
+            assert event in frames
+
+        # Rates match spec
+        assert rates["idle"] == pytest.approx(0.8)
+        assert rates["speaking"] == pytest.approx(0.1)
+
+    @pytest.mark.integration
+    def test_renderer_accepts_layered_frames(self, real_assets, tmp_path):
+        """Verify the AvatarRenderer can use layered frames."""
+        from unittest.mock import patch
+        from avatar.frames.layered import FrameAtlasBuilder
+
+        builder = FrameAtlasBuilder(
+            assets_dir=real_assets,
+            cache_dir=tmp_path / "cache",
+            pixel_width=256,
+            pixel_height=256,
+        )
+        frames, rates = builder.build()
+
+        # Patch load_frame_set to return our frames
+        with patch("avatar.renderer.load_frame_set", return_value=(frames, rates)):
+            from avatar.renderer import AvatarRenderer
+            from avatar.state_machine import AvatarState
+
+            class FakeTerminal:
+                width = 80
+                height = 24
+                number_of_colors = 256
+                home = "HOME"
+                def clear(self): return ""
+                def hidden_cursor(self): return self
+                def __enter__(self): return self
+                def __exit__(self, *a): pass
+
+            renderer = AvatarRenderer(terminal=FakeTerminal(), frame_set="layered2d")
+            assert renderer._is_sixel is True
+
+            for state in AvatarState:
+                frame = renderer.get_current_frame(state, frame_index=0)
+                assert isinstance(frame, str)
+                assert len(frame) > 0
