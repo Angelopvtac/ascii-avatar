@@ -2,6 +2,7 @@
 
 Supports multiple modes:
 - "cyberpunk": hand-crafted ASCII art frames (legacy)
+- "layered2d": procedurally generated 2.5D layered avatar frames
 - "portrait": image-to-ASCII converted frames from a portrait image
 - "portrait:<path>": custom image as avatar source
 
@@ -72,7 +73,7 @@ def load_frame_set(
     """Load a frame set by name.
 
     Args:
-        name: "cyberpunk", "portrait", or "portrait:/path/to/image.png"
+        name: "cyberpunk", "layered2d", "portrait", or "portrait:/path/to/image.png"
         width: ASCII art width in characters.  ``None`` = auto-detect.
         height: ASCII art height in lines.  ``None`` = auto-detect.
         charset: Override rendering charset.  ``None`` = DEFAULT_CHARSET.
@@ -86,10 +87,41 @@ def load_frame_set(
         from avatar.frames.cyberpunk import FRAMES, FRAME_RATES as RATES
         return FRAMES, RATES
 
+    if name == "layered2d":
+        return _load_layered2d_frames(width, height)
+
     if name.startswith("portrait"):
         return _load_portrait_frames(name, width, height, charset)
 
     raise KeyError(f"Unknown frame set: {name}")
+
+
+def _load_layered2d_frames(
+    width: int | None,
+    height: int | None,
+) -> tuple[dict[str, list[str]], dict[str, float]]:
+    """Generate layered 2.5D avatar frames via FrameAtlasBuilder."""
+    from avatar.frames.layered import FrameAtlasBuilder
+    from avatar.frames.sixel import get_terminal_pixel_size, get_terminal_cell_size
+
+    pixel_size = get_terminal_pixel_size()
+    cell_size = get_terminal_cell_size()
+
+    if pixel_size and pixel_size[0] > 0:
+        px_w, px_h = pixel_size
+        if cell_size:
+            px_h -= cell_size[1] * 2
+        px_h = max(px_h, 100)
+    else:
+        if width is None or height is None:
+            auto_w, auto_h = _detect_terminal_size()
+            width = width or auto_w
+            height = height or auto_h
+        px_w = width * 8
+        px_h = height * 16
+
+    builder = FrameAtlasBuilder(pixel_width=px_w, pixel_height=px_h)
+    return builder.build()
 
 
 def _load_portrait_frames(

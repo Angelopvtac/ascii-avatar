@@ -19,7 +19,7 @@ class Persona:
 PERSONAS: dict[str, Persona] = {
     "ghost": Persona(
         name="ghost",
-        frames="portrait",
+        frames="layered2d",
         voice_engine="kokoro",
         voice_id="af_bella",
         accent_color="cyan",
