@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from PIL import Image, ImageEnhance
+
 log = logging.getLogger(__name__)
 
 CANVAS_SIZE = (512, 512)
@@ -270,3 +272,92 @@ STATE_FRAME_MAP: dict[str, list[dict[str, str]]] = {
     "glitch": _glitch_frames,
     "flicker": _flicker_frames,
 }
+
+# Parallax multipliers for each head angle direction.
+# Negative = shift left, positive = shift right, zero = no shift.
+_ANGLE_MULTIPLIERS: dict[str, float] = {
+    "center": 0.0,
+    "left": -1.0,
+    "right": 1.0,
+    "up": 0.0,
+    "down": 0.0,
+}
+
+
+def _apply_gits_color_grade(img: Image.Image) -> Image.Image:
+    """Apply Ghost in the Shell inspired color grade.
+
+    Pixel-by-pixel mapping:
+    - highlights (luminance >= 192) → cyan tint
+    - midtones (64 <= luminance < 192) → violet tint
+    - shadows (luminance < 64) → deep purple tint
+    """
+    rgb = img.convert("RGB")
+    pixels = rgb.load()
+    width, height = rgb.size
+    for y in range(height):
+        for x in range(width):
+            r, g, b = pixels[x, y]
+            lum = int(0.299 * r + 0.587 * g + 0.114 * b)
+            if lum >= 192:
+                # Highlights: cyan (boost G and B, reduce R)
+                r2 = max(0, int(r * 0.7))
+                g2 = min(255, int(g * 1.1))
+                b2 = min(255, int(b * 1.2))
+            elif lum >= 64:
+                # Midtones: violet (boost R and B, reduce G)
+                r2 = min(255, int(r * 1.1))
+                g2 = max(0, int(g * 0.8))
+                b2 = min(255, int(b * 1.2))
+            else:
+                # Shadows: deep purple (strong R and B boost, crush G)
+                r2 = min(255, int(r * 1.2 + 20))
+                g2 = max(0, int(g * 0.6))
+                b2 = min(255, int(b * 1.3 + 30))
+            pixels[x, y] = (r2, g2, b2)
+    return rgb
+
+
+class LayerCompositor:
+    """Composites avatar layers into a single image with parallax and color grading."""
+
+    def __init__(self, assets_dir: Path, canvas_size: tuple[int, int] = CANVAS_SIZE) -> None:
+        self.assets_dir = Path(assets_dir)
+        self.canvas_size = canvas_size
+        self.layers: dict[str, dict[str, Image.Image]] = {}
+        self._load_all_layers()
+
+    def _load_all_layers(self) -> None:
+        """Load all layer variant PNGs from assets_dir, resized to canvas_size."""
+        for layer_name, layer_def in LAYER_DEFS.items():
+            self.layers[layer_name] = {}
+            for variant in layer_def["variants"]:
+                variant_name = variant["name"]
+                file_path = self.assets_dir / variant["file"]
+                img = Image.open(file_path).convert("RGBA")
+                img = img.resize(self.canvas_size, Image.LANCZOS)
+                self.layers[layer_name][variant_name] = img
+
+    def composite(self, combo: dict[str, str], head_angle: str) -> Image.Image:
+        """Composite layers bottom-to-top with parallax, apply GITS color grade.
+
+        Args:
+            combo: mapping of layer name -> variant name (e.g. from STATE_FRAME_MAP)
+            head_angle: one of 'center', 'left', 'right', 'up', 'down'
+
+        Returns:
+            RGB Image at self.canvas_size
+        """
+        canvas = Image.new("RGB", self.canvas_size, (10, 10, 15))
+        multiplier = _ANGLE_MULTIPLIERS.get(head_angle, 0.0)
+
+        for layer_name in LAYER_DEFS:
+            variant_name = combo.get(layer_name)
+            if variant_name is None:
+                continue
+            layer_img = self.layers[layer_name][variant_name]
+            offset_x = int(PARALLAX_OFFSETS[layer_name] * multiplier)
+            canvas.paste(layer_img, (offset_x, 0), mask=layer_img.split()[3])
+
+        graded = _apply_gits_color_grade(canvas)
+        return graded
