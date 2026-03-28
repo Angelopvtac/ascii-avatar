@@ -90,10 +90,86 @@ def load_frame_set(
     if name == "layered2d":
         return _load_layered2d_frames(width, height)
 
+    if name == "musetalk":
+        return _load_musetalk_frames(width, height)
+
     if name.startswith("portrait"):
         return _load_portrait_frames(name, width, height, charset)
 
     raise KeyError(f"Unknown frame set: {name}")
+
+
+def _load_musetalk_frames(
+    width: int | None,
+    height: int | None,
+) -> tuple[dict[str, list[str]], dict[str, float]]:
+    """Load pre-rendered MuseTalk frames with GITS color grade.
+
+    Converts PNG frames to braille strings at startup, caches result.
+    """
+    import pickle
+    from PIL import Image
+    from avatar.frames.converter import _braille_convert
+
+    if width is None or height is None:
+        auto_w, auto_h = _detect_terminal_size()
+        width = width or auto_w
+        height = height or auto_h
+
+    gits_dir = Path(__file__).parent.parent.parent.parent / "assets" / "gits_frames"
+    cache_dir = Path.home() / ".cache" / "ascii-avatar" / "musetalk"
+    cache_file = cache_dir / f"{width}x{height}.pkl"
+
+    # Try cache
+    if cache_file.exists():
+        try:
+            with open(cache_file, "rb") as f:
+                cached = pickle.load(f)
+            log.info("Loaded MuseTalk frames from cache (%dx%d)", width, height)
+            return cached, FRAME_RATES
+        except Exception:
+            pass
+
+    log.info("Building MuseTalk braille frames (%dx%d)...", width, height)
+
+    frames: dict[str, list[str]] = {}
+    states = ["idle", "speaking", "thinking", "listening", "error"]
+
+    for state in states:
+        state_dir = gits_dir / state
+        if not state_dir.exists():
+            log.warning("Missing MuseTalk state dir: %s", state_dir)
+            frames[state] = []
+            continue
+
+        pngs = sorted(state_dir.glob("*.png"))
+        state_frames = []
+        for png_path in pngs:
+            img = Image.open(png_path)
+            braille_str = _braille_convert(
+                img, width, height,
+                invert=False, gits=False,
+                tint=(0, 220, 100),
+            )
+            state_frames.append(braille_str)
+
+        frames[state] = state_frames
+        log.info("  %s: %d frames", state, len(state_frames))
+
+    # Micro-events: reuse idle frames for blink/glitch/flicker
+    idle_frames = frames.get("idle", [])
+    if idle_frames:
+        frames["blink"] = idle_frames[:4] if len(idle_frames) >= 4 else idle_frames
+        frames["glitch"] = frames.get("error", idle_frames)[:6]
+        frames["flicker"] = idle_frames[:3]
+
+    # Cache
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    with open(cache_file, "wb") as f:
+        pickle.dump(frames, f)
+    log.info("Cached MuseTalk frames to %s", cache_file)
+
+    return frames, FRAME_RATES
 
 
 def _load_layered2d_frames(
