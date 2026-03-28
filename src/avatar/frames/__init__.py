@@ -100,27 +100,30 @@ def _load_layered2d_frames(
     width: int | None,
     height: int | None,
 ) -> tuple[dict[str, list[str]], dict[str, float]]:
-    """Generate layered 2.5D avatar frames via FrameAtlasBuilder."""
+    """Generate layered 2.5D avatar frames via FrameAtlasBuilder.
+
+    Uses sixel if the terminal supports it, otherwise falls back to braille.
+    """
     from avatar.frames.layered import FrameAtlasBuilder
-    from avatar.frames.sixel import get_terminal_pixel_size, get_terminal_cell_size
 
-    pixel_size = get_terminal_pixel_size()
-    cell_size = get_terminal_cell_size()
+    # Detect terminal character dimensions
+    if width is None or height is None:
+        auto_w, auto_h = _detect_terminal_size()
+        width = width or auto_w
+        height = height or auto_h
 
-    if pixel_size and pixel_size[0] > 0:
-        px_w, px_h = pixel_size
-        if cell_size:
-            px_h -= cell_size[1] * 2
-        px_h = max(px_h, 100)
-    else:
-        if width is None or height is None:
-            auto_w, auto_h = _detect_terminal_size()
-            width = width or auto_w
-            height = height or auto_h
-        px_w = width * 8
-        px_h = height * 16
+    # Always use braille for layered2d — sixel passthrough is unreliable in tmux
+    charset = "braille"
 
-    builder = FrameAtlasBuilder(pixel_width=px_w, pixel_height=px_h)
+    log.info("Layered2D: charset=%s, terminal=%dx%d chars", charset, width, height)
+
+    builder = FrameAtlasBuilder(
+        charset=charset,
+        char_width=width,
+        char_height=height,
+        pixel_width=width * 8,
+        pixel_height=height * 16,
+    )
     return builder.build()
 
 

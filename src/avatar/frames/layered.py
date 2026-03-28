@@ -384,7 +384,10 @@ FRAME_RATES: dict[str, float] = {
 
 
 class FrameAtlasBuilder:
-    """Builds and caches a full sixel frame atlas for all avatar states."""
+    """Builds and caches a full frame atlas for all avatar states.
+
+    Supports both sixel (pixel-perfect) and braille (Unicode) encoding.
+    """
 
     def __init__(
         self,
@@ -393,17 +396,24 @@ class FrameAtlasBuilder:
         pixel_width: int = 512,
         pixel_height: int = 512,
         max_colors: int = 128,
+        charset: str = "braille",
+        char_width: int = 60,
+        char_height: int = 33,
     ) -> None:
         self.assets_dir = Path(assets_dir) if assets_dir is not None else ASSETS_DIR
         self.cache_dir = Path(cache_dir) if cache_dir is not None else CACHE_DIR
         self.pixel_width = pixel_width
         self.pixel_height = pixel_height
         self.max_colors = max_colors
+        self.charset = charset  # "sixel" or "braille"
+        self.char_width = char_width
+        self.char_height = char_height
 
     def _cache_key(self) -> str:
         """Compute a SHA-256 cache key from dimensions and all layer file contents."""
         h = hashlib.sha256()
-        h.update(f"{self.pixel_width}x{self.pixel_height}x{self.max_colors}".encode())
+        h.update(f"{self.charset}:{self.pixel_width}x{self.pixel_height}".encode())
+        h.update(f":{self.char_width}x{self.char_height}:{self.max_colors}".encode())
         for layer_name, layer_def in sorted(LAYER_DEFS.items()):
             for variant in layer_def["variants"]:
                 file_path = self.assets_dir / variant["file"]
@@ -431,17 +441,30 @@ class FrameAtlasBuilder:
         with open(path, "wb") as f:
             pickle.dump(frames, f)
 
+    def _encode_frame(self, img: Image.Image) -> str:
+        """Encode a composited PIL Image to the target charset string."""
+        if self.charset == "sixel":
+            from avatar.frames.sixel import encode_sixel
+            return encode_sixel(img, max_colors=self.max_colors)
+        else:
+            from avatar.frames.converter import _braille_convert
+            return _braille_convert(
+                img, self.char_width, self.char_height,
+                invert=True, gits=True, color_accent="cyan",
+            )
+
     def build(self) -> tuple[dict[str, list[str]], dict[str, float]]:
         """Build or load the frame atlas.
 
         Returns:
-            (frames, FRAME_RATES) where frames maps state name -> list of sixel strings.
+            (frames, FRAME_RATES) where frames maps state name -> list of encoded strings.
         """
-        from avatar.frames.sixel import encode_sixel
-
         cached = self._load_cache()
         if cached is not None:
             return cached, FRAME_RATES
+
+        log.info("Building layered2d frame atlas (%s, %dx%d)...",
+                 self.charset, self.char_width, self.char_height)
 
         compositor = LayerCompositor(self.assets_dir)
         frames: dict[str, list[str]] = {}
@@ -449,15 +472,15 @@ class FrameAtlasBuilder:
         for state, combos in STATE_FRAME_MAP.items():
             state_frames: list[str] = []
             for combo in combos:
-                # Infer head angle from the face variant in this combo.
                 face_variant = combo.get("face", "center")
                 head_angle = _FACE_TO_ANGLE.get(face_variant, "center")
 
                 img = compositor.composite(combo, head_angle)
-                img = img.resize((self.pixel_width, self.pixel_height), Image.LANCZOS)
-                sixel_str = encode_sixel(img, max_colors=self.max_colors)
-                state_frames.append(sixel_str)
+                encoded = self._encode_frame(img)
+                state_frames.append(encoded)
             frames[state] = state_frames
+            log.info("  %s: %d frames", state, len(state_frames))
 
         self._save_cache(frames)
+        log.info("Frame atlas cached.")
         return frames, FRAME_RATES
