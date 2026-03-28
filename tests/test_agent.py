@@ -1,7 +1,6 @@
 """Tests for the avatar agent decision loop."""
-import json
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -57,10 +56,8 @@ class TestAgentLoop:
         agent = AgentLoop(socket_path="/dev/null", dry_run=True)
         assert agent._should_suppress_speech() is False
 
-    @patch("avatar.agent.anthropic")
-    def test_decide_calls_haiku(self, mock_anthropic):
+    def test_decide_calls_haiku(self):
         mock_client = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
         mock_client.messages.create.return_value = MagicMock(
             content=[MagicMock(text='{"state": "thinking", "speak": null}')]
         )
@@ -87,3 +84,24 @@ class TestAgentLoop:
         state, speak = agent._decide()
         assert state == "idle"
         assert speak is None
+
+    def test_debounce_allows_errors_through(self):
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = MagicMock(
+            content=[MagicMock(text='{"state": "error", "speak": "Build failed."}')]
+        )
+
+        agent = AgentLoop(socket_path="/dev/null", dry_run=True)
+        agent._client = mock_client
+        agent._last_speech_time = time.monotonic()  # just spoke
+
+        agent._process_raw_event({
+            "hook": "PostToolUseFailure",
+            "session_id": "s1",
+            "cwd": "/home/user/projects/vyzibl",
+        })
+        state, speak = agent._decide()
+
+        # Error events bypass debounce
+        assert state == "error"
+        assert speak == "Build failed."
