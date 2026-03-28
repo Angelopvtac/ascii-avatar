@@ -30,6 +30,13 @@ Respond with ONLY a JSON object, no explanation:
 
 MAX_SPEECH_WORDS = 10
 
+_CONTROL_CHARS = re.compile(r"[\r\n\t\x00-\x1f]")
+
+
+def _sanitize(value: str) -> str:
+    """Strip control characters to prevent prompt injection via cwd/hook fields."""
+    return _CONTROL_CHARS.sub(" ", value)
+
 
 def build_prompt(
     sessions: list[dict],
@@ -44,9 +51,9 @@ def build_prompt(
         lines.append("Sessions:")
         for s in sessions:
             parts = [
-                f"  {s['project']}:",
-                f"status={s['status']}",
-                f"last={s['last_event']}",
+                f"  {_sanitize(str(s['project']))}:",
+                f"status={_sanitize(str(s['status']))}",
+                f"last={_sanitize(str(s['last_event']))}",
                 f"tools={s['tool_count']}",
                 f"errors={s['error_count']}",
             ]

@@ -50,6 +50,7 @@ class AgentLoop:
         self._client: anthropic.Anthropic | None = None
         self._last_speech_time: float | None = None
         self._events_this_cycle: int = 0
+        self._cycle_lock = threading.Lock()
         self._stop_event = threading.Event()
         self.on_state_change: Callable[[str], None] | None = None
         self.on_speak: Callable[[str], None] | None = None
@@ -69,8 +70,9 @@ class AgentLoop:
         session_id = data.get("session_id", "unknown")
         cwd = data.get("cwd", "/unknown")
 
-        self._tracker.update(session_id, cwd, hook)
-        self._events_this_cycle += 1
+        with self._cycle_lock:
+            self._tracker.update(session_id, cwd, hook)
+            self._events_this_cycle += 1
 
     def _hook_to_state(self, hook: str) -> str:
         """Map a hook event type to a visual state."""
@@ -91,12 +93,16 @@ class AgentLoop:
 
     def _decide(self) -> tuple[str, str | None]:
         """Run one decision cycle. Returns (state, speak_text_or_none)."""
-        self._tracker.mark_stale(threshold=STALE_THRESHOLD)
+        # Snapshot and reset cycle state under lock to avoid races with listener thread
+        with self._cycle_lock:
+            self._tracker.mark_stale(threshold=STALE_THRESHOLD)
+            events_count = self._events_this_cycle
+            summary = self._tracker.summarize() if events_count > 0 else []
+            self._events_this_cycle = 0
+            self._tracker.reset_counts()
 
-        if self._events_this_cycle == 0:
+        if events_count == 0:
             return ("idle", None)
-
-        summary = self._tracker.summarize()
 
         # Calculate time since last speech for debounce context
         last_speech_ago = None
@@ -109,8 +115,6 @@ class AgentLoop:
         if self._client is None:
             # dry_run or no client — use visual state heuristic only
             states = [self._hook_to_state(s["last_event"]) for s in summary]
-            self._events_this_cycle = 0
-            self._tracker.reset_counts()
             return (self._highest_priority_state(states), None)
 
         try:
@@ -120,7 +124,11 @@ class AgentLoop:
                 system=prompt["system"],
                 messages=[{"role": "user", "content": prompt["user"]}],
             )
-            raw = response.content[0].text
+            if not response.content:
+                log.warning("Haiku returned empty content")
+                raw = ""
+            else:
+                raw = response.content[0].text
             state, speak = parse_response(raw)
         except Exception as e:
             log.error("Haiku call failed: %s", e)
@@ -137,8 +145,6 @@ class AgentLoop:
         if speak:
             self._last_speech_time = time.monotonic()
 
-        self._events_this_cycle = 0
-        self._tracker.reset_counts()
         return (state, speak)
 
     def start_listener(self) -> None:
