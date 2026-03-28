@@ -175,15 +175,96 @@ def generate_face_layers(
     output_dir = Path(output_dir)
     w, h = canvas_size
 
-    # Build a detailed cyberpunk face base instead of using the raw reference
-    face_base = _draw_cyberpunk_face(canvas_size)
+    ref = reference.convert("RGBA").resize(canvas_size, Image.LANCZOS)
 
-    # face/
+    # Boost contrast for the reference to pop in braille rendering
+    from PIL import ImageEnhance
+    ref_enhanced = ImageEnhance.Contrast(ref.convert("RGB")).enhance(1.5)
+    ref_enhanced = ImageEnhance.Brightness(ref_enhanced).enhance(1.1)
+    ref = ref_enhanced.convert("RGBA")
+
+    # --- FACE layers: extract center face region, mask out eyes/mouth area ---
     face_dir = output_dir / "face"
     face_dir.mkdir(parents=True, exist_ok=True)
 
+    # The face layer is the full reference with the eye and mouth regions
+    # made transparent (those come from expression layers)
+    face_base = ref.copy()
+    face_arr = np.array(face_base)
+
+    # Mask out eye regions (will be drawn by eye expression layers)
+    eye_cy = int(h * 0.36)
+    eye_ry = int(h * 0.09)
+    left_cx = int(w * 0.33)
+    right_cx = int(w * 0.67)
+    eye_rx = int(w * 0.14)
+
+    for ecx in [left_cx, right_cx]:
+        y0 = max(0, eye_cy - eye_ry)
+        y1 = min(h, eye_cy + eye_ry)
+        x0 = max(0, ecx - eye_rx)
+        x1 = min(w, ecx + eye_rx)
+        # Soft edge mask using distance from ellipse center
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                dy = (y - eye_cy) / eye_ry
+                dx = (x - ecx) / eye_rx
+                dist = dx * dx + dy * dy
+                if dist < 1.0:
+                    # Fade alpha at edges
+                    fade = max(0, 1.0 - dist)
+                    face_arr[y, x, 3] = int(face_arr[y, x, 3] * (1 - fade * 0.85))
+
+    # Mask out mouth region
+    mouth_cy = int(h * 0.64)
+    mouth_hw = int(w * 0.16)
+    mouth_ry = int(h * 0.07)
+    my0 = max(0, mouth_cy - mouth_ry)
+    my1 = min(h, mouth_cy + mouth_ry)
+    mx0 = max(0, w // 2 - mouth_hw)
+    mx1 = min(w, w // 2 + mouth_hw)
+    for y in range(my0, my1):
+        for x in range(mx0, mx1):
+            dy = (y - mouth_cy) / mouth_ry
+            dx = (x - w // 2) / mouth_hw
+            dist = dx * dx + dy * dy
+            if dist < 1.0:
+                fade = max(0, 1.0 - dist)
+                face_arr[y, x, 3] = int(face_arr[y, x, 3] * (1 - fade * 0.7))
+
+    face_base = Image.fromarray(face_arr, "RGBA")
+
+    # Add cyberpunk tech overlays to the face
+    draw = ImageDraw.Draw(face_base)
+
+    # Forehead implant line
+    imp_y = int(h * 0.15)
+    imp_w = int(w * 0.22)
+    _draw_glow_line(draw,
+        [(w // 2 - imp_w, imp_y), (w // 2 + imp_w, imp_y)],
+        (0, 160, 200, 140), (0, 200, 255, 60), glow_radius=3, width=2)
+    for dx in [-imp_w, -imp_w // 2, 0, imp_w // 2, imp_w]:
+        draw.ellipse([w // 2 + dx - 2, imp_y - 2, w // 2 + dx + 2, imp_y + 2],
+                     fill=(0, 255, 220, 180))
+
+    # Cheekbone implant lines
+    for side in [-1, 1]:
+        cx_chk = w // 2 + side * int(w * 0.28)
+        _draw_glow_line(draw,
+            [(cx_chk, int(h * 0.38)), (cx_chk + side * 6, int(h * 0.52))],
+            (80, 0, 180, 120), (120, 0, 255, 60), glow_radius=2, width=2)
+
+    # Temple circuits
+    for side in [-1, 1]:
+        tx = w // 2 + side * int(w * 0.38)
+        for i, ty in enumerate(range(int(h * 0.20), int(h * 0.40), 10)):
+            alpha = 160 - i * 18
+            draw.rectangle([tx - 2, ty, tx + 2, ty + 5],
+                          fill=(0, 200, 180, max(30, alpha)))
+
     face_base.save(face_dir / "face_center.png")
-    # Angle variants: shift + slight perspective
+
+    # Angle variants
     for name, x_off, scale_x in [
         ("face_left15.png", -20, 0.94),
         ("face_right15.png", 20, 0.94),
@@ -198,20 +279,60 @@ def generate_face_layers(
         shifted.paste(face_base, (0, y_off), face_base)
         shifted.save(face_dir / name)
 
-    # hair/
+    # --- HAIR layers: extract top portion of reference ---
     hair_dir = output_dir / "hair"
     hair_dir.mkdir(parents=True, exist_ok=True)
-    hair_base = _draw_cyberpunk_hair(canvas_size)
+
+    # Hair = top 45% of the reference with soft bottom fade
+    hair_region = ref.copy()
+    hair_arr = np.array(hair_region)
+    fade_start = int(h * 0.30)
+    fade_end = int(h * 0.45)
+    for y in range(fade_start, h):
+        if y < fade_end:
+            alpha_mult = 1.0 - (y - fade_start) / (fade_end - fade_start)
+        else:
+            alpha_mult = 0.0
+        hair_arr[y, :, 3] = (hair_arr[y, :, 3] * alpha_mult).astype(np.uint8)
+    hair_base = Image.fromarray(hair_arr, "RGBA")
+
     hair_base.save(hair_dir / "hair_center.png")
     for name, x_off in [("hair_left.png", -12), ("hair_right.png", 12)]:
         shifted = _blank_rgba(canvas_size)
         shifted.paste(hair_base, (x_off, 0), hair_base)
         shifted.save(hair_dir / name)
 
-    # nose/
+    # --- NOSE layers: extract small center region ---
     nose_dir = output_dir / "nose"
     nose_dir.mkdir(parents=True, exist_ok=True)
-    nose_base = _draw_cyberpunk_nose(canvas_size)
+
+    # Nose = small region at center, soft-masked
+    nose_base = _blank_rgba(canvas_size)
+    nose_region = ref.copy()
+    nose_arr = np.array(nose_region)
+    # Zero out everything except nose area
+    ny_center = int(h * 0.50)
+    nx_center = w // 2
+    nose_rx = int(w * 0.08)
+    nose_ry = int(h * 0.08)
+    for y in range(h):
+        for x in range(w):
+            dy = (y - ny_center) / nose_ry if nose_ry > 0 else 999
+            dx = (x - nx_center) / nose_rx if nose_rx > 0 else 999
+            dist = dx * dx + dy * dy
+            if dist > 1.0:
+                nose_arr[y, x, 3] = 0
+            elif dist > 0.6:
+                fade = (dist - 0.6) / 0.4
+                nose_arr[y, x, 3] = int(nose_arr[y, x, 3] * (1 - fade))
+    nose_base = Image.fromarray(nose_arr, "RGBA")
+
+    # Add subtle nose bridge highlight
+    draw = ImageDraw.Draw(nose_base)
+    _draw_glow_line(draw,
+        [(nx_center, int(h * 0.44)), (nx_center, int(h * 0.55))],
+        (0, 120, 110, 80), (0, 160, 150, 40), glow_radius=2, width=1)
+
     nose_base.save(nose_dir / "nose_center.png")
     for name, x_off in [("nose_left.png", -4), ("nose_right.png", 4)]:
         shifted = _blank_rgba(canvas_size)
