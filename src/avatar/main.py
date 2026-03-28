@@ -253,17 +253,24 @@ def main(argv: list[str] | None = None) -> None:
                 state = sm.state
                 state_val = state.value
 
+                # Mouth override: only use mouth_sync when TTS is actively
+                # playing audio. Otherwise let frame_index cycle naturally
+                # so speaking animation works without voice.
+                mouth_override = None
+                if tts and state == AvatarState.SPEAKING:
+                    mouth_override = mouth_sync.current_frame
+
                 # Use compositor for frame selection — handles micro-events
                 frame = compositor.get_frame(
                     state_val, frame_index,
-                    mouth_frame_override=mouth_sync.current_frame,
+                    mouth_frame_override=mouth_override,
                 )
 
                 # Fall back to renderer if compositor returns empty
                 if not frame:
                     frame = renderer.get_current_frame(
                         state, frame_index,
-                        mouth_frame_override=mouth_sync.current_frame,
+                        mouth_frame_override=mouth_override,
                     )
 
                 status = renderer.format_status_bar(
