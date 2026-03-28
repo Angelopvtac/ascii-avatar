@@ -53,6 +53,9 @@ class AgentLoop:
         self._stop_event = threading.Event()
         self.on_state_change: Callable[[str], None] | None = None
         self.on_speak: Callable[[str], None] | None = None
+        self._zmq_context: zmq.Context | None = None
+        self._zmq_socket: zmq.Socket | None = None
+        self._listener_thread: threading.Thread | None = None
 
         if not dry_run:
             self._client = anthropic.Anthropic()
@@ -137,3 +140,67 @@ class AgentLoop:
         self._events_this_cycle = 0
         self._tracker.reset_counts()
         return (state, speak)
+
+    def start_listener(self) -> None:
+        """Start the ZeroMQ listener thread."""
+        self._stop_event.clear()
+        self._zmq_context = zmq.Context()
+        self._zmq_socket = self._zmq_context.socket(zmq.PULL)
+        self._zmq_socket.bind(f"ipc://{self._socket_path}")
+        self._listener_thread = threading.Thread(
+            target=self._listen_loop, daemon=True,
+        )
+        self._listener_thread.start()
+
+    def _listen_loop(self) -> None:
+        """Background thread: receive events from ZeroMQ and buffer them."""
+        assert self._zmq_socket is not None
+        poller = zmq.Poller()
+        poller.register(self._zmq_socket, zmq.POLLIN)
+
+        while not self._stop_event.is_set():
+            socks = dict(poller.poll(timeout=100))
+            if self._zmq_socket in socks:
+                try:
+                    raw = self._zmq_socket.recv(zmq.NOBLOCK)
+                    data = json.loads(raw)
+                    self._process_raw_event(data)
+                except (json.JSONDecodeError, ValueError) as e:
+                    log.warning("Malformed event: %s", e)
+
+    def stop_listener(self) -> None:
+        """Stop the ZeroMQ listener and clean up."""
+        self._stop_event.set()
+        if self._listener_thread is not None:
+            self._listener_thread.join(timeout=2)
+        if self._zmq_socket is not None:
+            self._zmq_socket.close()
+        if self._zmq_context is not None:
+            self._zmq_context.term()
+        if os.path.exists(self._socket_path):
+            os.unlink(self._socket_path)
+
+    def _act(self, state: str, speak: str | None) -> None:
+        """Execute the agent's decision: update state and optionally speak."""
+        if self.on_state_change:
+            self.on_state_change(state)
+        if speak and self.on_speak:
+            self.on_speak(speak)
+
+    def run(self) -> None:
+        """Main agent loop: collect → decide → act, on BATCH_INTERVAL cycle."""
+        self.start_listener()
+        log.info("Agent loop started. Socket: %s", self._socket_path)
+        try:
+            while not self._stop_event.is_set():
+                self._stop_event.wait(timeout=BATCH_INTERVAL)
+                if self._stop_event.is_set():
+                    break
+                state, speak = self._decide()
+                self._act(state, speak)
+        finally:
+            self.stop_listener()
+
+    def stop(self) -> None:
+        """Signal the agent loop to stop."""
+        self._stop_event.set()

@@ -1,8 +1,11 @@
 """Tests for the avatar agent decision loop."""
+import os
+import threading
 import time
 from unittest.mock import MagicMock
 
 import pytest
+import zmq
 
 from avatar.agent import AgentLoop
 
@@ -105,3 +108,75 @@ class TestAgentLoop:
         # Error events bypass debounce
         assert state == "error"
         assert speak == "Build failed."
+
+
+class TestAgentEventCollection:
+    def test_collect_events_buffers_for_interval(self, tmp_path):
+        sock_path = str(tmp_path / "test.sock")
+        agent = AgentLoop(socket_path=sock_path, dry_run=True)
+        agent.start_listener()
+        time.sleep(0.2)
+
+        # Send events via PUSH socket
+        ctx = zmq.Context()
+        sock = ctx.socket(zmq.PUSH)
+        sock.connect(f"ipc://{sock_path}")
+        time.sleep(0.1)
+
+        sock.send_json({
+            "hook": "PreToolUse",
+            "session_id": "s1",
+            "cwd": "/home/user/projects/vyzibl",
+        })
+        sock.send_json({
+            "hook": "PostToolUse",
+            "session_id": "s1",
+            "cwd": "/home/user/projects/vyzibl",
+        })
+        time.sleep(0.3)
+
+        assert agent._events_this_cycle == 2
+        assert agent._tracker.get("s1") is not None
+
+        sock.close()
+        ctx.term()
+        agent.stop_listener()
+
+    def test_stop_listener_cleans_up(self, tmp_path):
+        sock_path = str(tmp_path / "test.sock")
+        agent = AgentLoop(socket_path=sock_path, dry_run=True)
+        agent.start_listener()
+        time.sleep(0.2)
+        agent.stop_listener()
+        time.sleep(0.2)
+        assert not os.path.exists(sock_path)
+
+
+class TestAgentCallbacks:
+    def test_on_state_change_called(self):
+        agent = AgentLoop(socket_path="/dev/null", dry_run=True)
+        states = []
+        agent.on_state_change = lambda s: states.append(s)
+        agent._process_raw_event({
+            "hook": "PreToolUse",
+            "session_id": "s1",
+            "cwd": "/home/user/projects/vyzibl",
+        })
+        state, speak = agent._decide()
+        agent._act(state, speak)
+        assert len(states) == 1
+        assert states[0] == "thinking"
+
+    def test_on_speak_called_with_text(self):
+        agent = AgentLoop(socket_path="/dev/null", dry_run=True)
+        spoken = []
+        agent.on_speak = lambda t: spoken.append(t)
+        agent._act("speaking", "Build complete.")
+        assert spoken == ["Build complete."]
+
+    def test_on_speak_not_called_when_none(self):
+        agent = AgentLoop(socket_path="/dev/null", dry_run=True)
+        spoken = []
+        agent.on_speak = lambda t: spoken.append(t)
+        agent._act("thinking", None)
+        assert spoken == []
