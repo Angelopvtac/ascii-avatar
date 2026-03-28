@@ -55,3 +55,33 @@ class SessionTracker:
 
     def get(self, session_id: str) -> SessionInfo | None:
         return self._sessions.get(session_id)
+
+    def summarize(self) -> list[dict[str, str | int]]:
+        """Produce per-session summaries for the agent prompt."""
+        return [
+            {
+                "project": info.project,
+                "last_event": info.last_event,
+                "status": info.status,
+                "tool_count": info.tool_count,
+                "error_count": info.error_count,
+            }
+            for info in self._sessions.values()
+        ]
+
+    def mark_stale(self, threshold: float = 30) -> None:
+        """Mark sessions as idle if no events received within threshold seconds."""
+        now = time.monotonic()
+        for info in self._sessions.values():
+            if info.status != "idle" and (now - info.last_update) > threshold:
+                info.status = "idle"
+
+    def reset_counts(self) -> None:
+        """Reset per-cycle counters after each agent decision."""
+        for info in self._sessions.values():
+            info.tool_count = 0
+            info.error_count = 0
+
+    @property
+    def active_count(self) -> int:
+        return sum(1 for info in self._sessions.values() if info.status != "idle")

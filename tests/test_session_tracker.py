@@ -44,3 +44,52 @@ class TestSessionTracker:
         tracker = SessionTracker()
         tracker.update("s1", "/home/user", "PreToolUse")
         assert tracker.get("s1").project == "user"
+
+
+class TestSessionSummary:
+    def test_summarize_single_session(self):
+        tracker = SessionTracker()
+        tracker.update("s1", "/home/user/projects/vyzibl", "PostToolUse")
+        tracker.update("s1", "/home/user/projects/vyzibl", "PostToolUse")
+        summary = tracker.summarize()
+        assert len(summary) == 1
+        assert summary[0]["project"] == "vyzibl"
+        assert summary[0]["tool_count"] == 2
+        assert summary[0]["error_count"] == 0
+        assert summary[0]["status"] == "active"
+
+    def test_summarize_multiple_sessions(self):
+        tracker = SessionTracker()
+        tracker.update("s1", "/home/user/projects/vyzibl", "PostToolUse")
+        tracker.update("s2", "/home/user/projects/xentra", "PreToolUse")
+        summary = tracker.summarize()
+        assert len(summary) == 2
+        projects = {s["project"] for s in summary}
+        assert projects == {"vyzibl", "xentra"}
+
+    def test_summarize_empty(self):
+        tracker = SessionTracker()
+        assert tracker.summarize() == []
+
+    def test_mark_stale_sessions_idle(self):
+        tracker = SessionTracker()
+        tracker.update("s1", "/home/user/projects/vyzibl", "PostToolUse")
+        # Manually backdate the session
+        tracker._sessions["s1"].last_update = time.monotonic() - 35
+        tracker.mark_stale(threshold=30)
+        assert tracker.get("s1").status == "idle"
+
+    def test_reset_counts(self):
+        tracker = SessionTracker()
+        tracker.update("s1", "/home/user/projects/vyzibl", "PostToolUse")
+        tracker.update("s1", "/home/user/projects/vyzibl", "PostToolUse")
+        tracker.reset_counts()
+        info = tracker.get("s1")
+        assert info.tool_count == 0
+        assert info.error_count == 0
+
+    def test_active_session_count(self):
+        tracker = SessionTracker()
+        tracker.update("s1", "/home/user/projects/vyzibl", "PostToolUse")
+        tracker.update("s2", "/home/user/projects/xentra", "PreToolUse")
+        assert tracker.active_count == 2
