@@ -1,7 +1,7 @@
-"""Procedural asset generator for the Layered 2.5D Avatar system.
+"""HUD-style cyberpunk avatar layer generator.
 
-Generates all 47 layer PNGs: backgrounds, overlays, face structure,
-and expression layers (eyes, eyebrows, mouth) in a bold cyberpunk style.
+Renders a Ghost in the Shell / tactical HUD face using PIL drawing.
+Glowing wireframes, circuit traces, data readouts — not photorealistic.
 """
 
 from __future__ import annotations
@@ -12,498 +12,362 @@ import random
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
-def _blank_rgba(canvas_size: tuple[int, int]) -> Image.Image:
-    return Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+def _blank(size):
+    return Image.new("RGBA", size, (0, 0, 0, 0))
+
+
+def _glow(img, radius=3, intensity=1.5):
+    """Add bloom/glow effect to bright elements."""
+    blurred = img.filter(ImageFilter.GaussianBlur(radius))
+    arr = np.array(img, dtype=np.float32)
+    blur_arr = np.array(blurred, dtype=np.float32)
+    result = np.clip(arr + blur_arr * (intensity - 1.0), 0, 255).astype(np.uint8)
+    return Image.fromarray(result, "RGBA")
+
+
+# Color palette
+CYAN = (0, 220, 200)
+CYAN_BRIGHT = (0, 255, 240)
+CYAN_DIM = (0, 120, 110)
+TEAL = (0, 180, 160)
+VIOLET = (100, 40, 180)
+PURPLE = (60, 20, 120)
+MAGENTA = (200, 0, 140)
+RED = (220, 30, 30)
+RED_DIM = (120, 15, 15)
+WHITE = (240, 240, 240)
+DARK = (8, 8, 15)
+
+
+def _a(color, alpha=255):
+    return (*color, alpha)
 
 
 # ---------------------------------------------------------------------------
 # Backgrounds
 # ---------------------------------------------------------------------------
 
-def generate_backgrounds(output_dir: Path | str, canvas_size: tuple[int, int] = (512, 512)) -> None:
-    output_dir = Path(output_dir)
+def generate_backgrounds(output_dir: Path, canvas_size=(512, 512)):
     output_dir.mkdir(parents=True, exist_ok=True)
     w, h = canvas_size
 
-    # bg_dim: dark gradient + noise
-    rng = np.random.default_rng(7)
-    grad = np.linspace(12, 5, h, dtype=np.float32)
-    arr = np.zeros((h, w, 3), dtype=np.float32)
-    arr[:, :, 0] = grad[:, None]
-    arr[:, :, 1] = grad[:, None]
-    arr[:, :, 2] = (grad * 1.3)[:, None]
-    noise = rng.integers(-3, 4, size=(h, w, 3), dtype=np.int8).astype(np.float32)
-    arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
-    alpha = np.full((h, w, 1), 255, dtype=np.uint8)
-    Image.fromarray(np.concatenate([arr, alpha], axis=2), "RGBA").save(output_dir / "bg_dim.png")
+    for name, center_color, edge_color, grid_alpha in [
+        ("bg_dim.png", (8, 12, 18), (4, 6, 10), 15),
+        ("bg_pulse.png", (10, 18, 25), (4, 8, 12), 25),
+        ("bg_error.png", (25, 6, 6), (12, 3, 3), 20),
+    ]:
+        img = Image.new("RGBA", canvas_size, (*edge_color, 255))
+        draw = ImageDraw.Draw(img)
 
-    # bg_pulse: dark base + cyan radial glow
-    cx, cy = w // 2, h // 2
-    ys, xs = np.mgrid[0:h, 0:w]
-    dist = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2).astype(np.float32)
-    max_r = np.sqrt(cx ** 2 + cy ** 2)
-    glow = np.clip(1.0 - dist / (max_r * 0.5), 0, 1) ** 1.5
-    base = np.zeros((h, w, 4), dtype=np.uint8)
-    base[..., 0] = np.clip(5 + glow * 30, 0, 255).astype(np.uint8)
-    base[..., 1] = np.clip(8 + glow * 100, 0, 255).astype(np.uint8)
-    base[..., 2] = np.clip(12 + glow * 110, 0, 255).astype(np.uint8)
-    base[..., 3] = 255
-    Image.fromarray(base, "RGBA").save(output_dir / "bg_pulse.png")
+        # Radial gradient
+        cx, cy = w // 2, h // 2
+        for r in range(max(w, h) // 2, 0, -2):
+            t = r / (max(w, h) // 2)
+            c = tuple(int(center_color[i] * (1 - t) + edge_color[i] * t) for i in range(3))
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(*c, 255))
 
-    # bg_error: dark base + red vignette
-    vign = np.clip(1.0 - dist / (max_r * 0.7), 0, 1) ** 1.2
-    base2 = np.zeros((h, w, 4), dtype=np.uint8)
-    base2[..., 0] = np.clip(10 + vign * 80, 0, 255).astype(np.uint8)
-    base2[..., 1] = np.clip(3, 0, 255).astype(np.uint8)
-    base2[..., 2] = np.clip(5 + vign * 15, 0, 255).astype(np.uint8)
-    base2[..., 3] = 255
-    Image.fromarray(base2, "RGBA").save(output_dir / "bg_error.png")
+        # Grid lines
+        for x in range(0, w, 32):
+            draw.line([(x, 0), (x, h)], fill=(0, 255, 200, grid_alpha), width=1)
+        for y in range(0, h, 32):
+            draw.line([(0, y), (w, y)], fill=(0, 255, 200, grid_alpha), width=1)
+
+        img.save(output_dir / name)
 
 
 # ---------------------------------------------------------------------------
 # Overlays
 # ---------------------------------------------------------------------------
 
-def generate_overlays(output_dir: Path | str, canvas_size: tuple[int, int] = (512, 512)) -> None:
-    output_dir = Path(output_dir)
+def generate_overlays(output_dir: Path, canvas_size=(512, 512)):
     output_dir.mkdir(parents=True, exist_ok=True)
     w, h = canvas_size
 
     # scanline_light
-    arr = np.zeros((h, w, 4), dtype=np.uint8)
-    arr[::4, :] = (0, 0, 0, 35)
+    img = _blank(canvas_size)
+    arr = np.array(img)
+    arr[::3, :] = (0, 0, 0, 25)
     Image.fromarray(arr, "RGBA").save(output_dir / "scanline_light.png")
 
     # scanline_heavy
-    arr2 = np.zeros((h, w, 4), dtype=np.uint8)
-    arr2[::2, :] = (0, 0, 0, 70)
-    Image.fromarray(arr2, "RGBA").save(output_dir / "scanline_heavy.png")
+    img = _blank(canvas_size)
+    arr = np.array(img)
+    arr[::2, :] = (0, 0, 0, 60)
+    Image.fromarray(arr, "RGBA").save(output_dir / "scanline_heavy.png")
 
     # crt_bloom
+    img = _blank(canvas_size)
+    draw = ImageDraw.Draw(img)
     cx, cy = w // 2, h // 2
-    ys, xs = np.mgrid[0:h, 0:w]
-    dist = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2).astype(np.float32)
-    max_r = np.sqrt(cx ** 2 + cy ** 2)
-    fade = np.clip(1.0 - dist / max_r, 0, 1) ** 2
-    bloom = np.zeros((h, w, 4), dtype=np.uint8)
-    bloom[..., 0] = (fade * 20).astype(np.uint8)
-    bloom[..., 1] = (fade * 90).astype(np.uint8)
-    bloom[..., 2] = (fade * 100).astype(np.uint8)
-    bloom[..., 3] = (fade * 100).astype(np.uint8)
-    Image.fromarray(bloom, "RGBA").save(output_dir / "crt_bloom.png")
+    for r in range(min(w, h) // 2, 0, -4):
+        t = 1.0 - r / (min(w, h) // 2)
+        a = int(t * t * 60)
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(0, 200, 200, a))
+    img.save(output_dir / "crt_bloom.png")
 
     # holo_flicker
-    rng_holo = np.random.default_rng(13)
-    flicker = np.zeros((h, w, 4), dtype=np.uint8)
-    for y in range(0, h, 6):
-        if rng_holo.random() > 0.4:
-            a = int(rng_holo.integers(15, 60))
-            flicker[y:y + 3, :] = (0, 180, 200, a)
-    Image.fromarray(flicker, "RGBA").save(output_dir / "holo_flicker.png")
+    img = _blank(canvas_size)
+    draw = ImageDraw.Draw(img)
+    rng = random.Random(13)
+    for y in range(0, h, 8):
+        if rng.random() > 0.4:
+            a = rng.randint(10, 45)
+            draw.rectangle([0, y, w, y + 3], fill=(0, 180, 200, a))
+    img.save(output_dir / "holo_flicker.png")
 
     # chrom_aberr
-    chrom = np.zeros((h, w, 4), dtype=np.uint8)
-    for y in range(0, h, 12):
-        chrom[y:y + 6, :] = (180, 0, 0, 25)
-        y2 = y + 6
-        if y2 < h:
-            chrom[y2:y2 + 6, :] = (0, 180, 180, 25)
-    Image.fromarray(chrom, "RGBA").save(output_dir / "chrom_aberr.png")
+    img = _blank(canvas_size)
+    draw = ImageDraw.Draw(img)
+    for y in range(0, h, 16):
+        draw.rectangle([0, y, w, y + 2], fill=(200, 0, 60, 20))
+        draw.rectangle([3, y + 8, w + 3, y + 10], fill=(0, 200, 200, 20))
+    img.save(output_dir / "chrom_aberr.png")
 
     # glitch_corrupt
-    rng42 = np.random.default_rng(42)
-    glitch = np.zeros((h, w, 4), dtype=np.uint8)
-    for _ in range(40):
-        bx = int(rng42.integers(0, w - 40))
-        by = int(rng42.integers(0, h - 8))
-        bw = int(rng42.integers(20, 120))
-        bh = int(rng42.integers(2, 12))
-        r, g, b = int(rng42.integers(0, 256)), int(rng42.integers(0, 256)), int(rng42.integers(0, 256))
-        a = int(rng42.integers(50, 140))
-        glitch[by:by + bh, bx:min(bx + bw, w)] = (r, g, b, a)
-    Image.fromarray(glitch, "RGBA").save(output_dir / "glitch_corrupt.png")
+    img = _blank(canvas_size)
+    draw = ImageDraw.Draw(img)
+    rng = random.Random(42)
+    for _ in range(35):
+        bx = rng.randint(0, w - 60)
+        by = rng.randint(0, h - 10)
+        bw = rng.randint(20, 100)
+        bh = rng.randint(2, 8)
+        c = rng.choice([_a(RED, 80), _a(CYAN_BRIGHT, 60), _a(MAGENTA, 70)])
+        draw.rectangle([bx, by, bx + bw, by + bh], fill=c)
+    img.save(output_dir / "glitch_corrupt.png")
 
     # noise_bands
-    rng99 = np.random.default_rng(99)
-    noise_img = np.zeros((h, w, 4), dtype=np.uint8)
+    img = _blank(canvas_size)
+    arr = np.array(img)
+    rng = np.random.default_rng(99)
     for y in range(0, h, 3):
-        val = int(rng99.integers(0, 80))
-        a_val = int(rng99.integers(15, 60))
-        noise_img[y:y + 3, :] = (val, val, val, a_val)
-    Image.fromarray(noise_img, "RGBA").save(output_dir / "noise_bands.png")
+        v = int(rng.integers(0, 70))
+        a = int(rng.integers(10, 50))
+        arr[y:y+2, :] = (v, v, v, a)
+    Image.fromarray(arr, "RGBA").save(output_dir / "noise_bands.png")
 
     # red_tint
-    red_tint = np.full((h, w, 4), (200, 20, 20, 45), dtype=np.uint8)
-    Image.fromarray(red_tint, "RGBA").save(output_dir / "red_tint.png")
+    Image.new("RGBA", canvas_size, _a(RED_DIM, 50)).save(output_dir / "red_tint.png")
 
 
 # ---------------------------------------------------------------------------
-# Cyberpunk Face Drawing Helpers
+# HUD Face Drawing
 # ---------------------------------------------------------------------------
 
-def _draw_glow_ellipse(draw, bbox, color, glow_color, glow_radius=6, width=3):
-    """Draw an ellipse with outer glow effect."""
-    for i in range(glow_radius, 0, -1):
-        alpha = int(glow_color[3] * (1 - i / glow_radius) * 0.5)
-        gc = (*glow_color[:3], alpha)
-        expanded = [bbox[0] - i, bbox[1] - i, bbox[2] + i, bbox[3] + i]
-        draw.ellipse(expanded, outline=gc, width=1)
-    draw.ellipse(bbox, outline=color, width=width)
+def _draw_hud_face_outline(draw, w, h, color=CYAN, alpha=200):
+    """Draw the main face wireframe — oval with angular jaw."""
+    cx, cy = w // 2, h // 2
+    c = _a(color, alpha)
+    dim = _a(CYAN_DIM, alpha // 2)
+
+    # Face oval (upper half)
+    face_w = int(w * 0.35)
+    face_top = int(h * 0.08)
+    face_mid = int(h * 0.50)
+
+    # Upper face arc
+    draw.arc([cx - face_w, face_top, cx + face_w, face_mid + int(h * 0.15)],
+             start=180, end=360, fill=c, width=2)
+
+    # Jawline — angular
+    jaw_w = int(w * 0.33)
+    jaw_y = int(h * 0.55)
+    chin_w = int(w * 0.08)
+    chin_y = int(h * 0.78)
+
+    # Left jaw
+    draw.line([(cx - face_w, face_mid - int(h * 0.03)), (cx - jaw_w, jaw_y)], fill=c, width=2)
+    draw.line([(cx - jaw_w, jaw_y), (cx - chin_w, chin_y)], fill=c, width=2)
+    # Chin
+    draw.line([(cx - chin_w, chin_y), (cx, chin_y + 5)], fill=c, width=2)
+    draw.line([(cx, chin_y + 5), (cx + chin_w, chin_y)], fill=c, width=2)
+    # Right jaw
+    draw.line([(cx + chin_w, chin_y), (cx + jaw_w, jaw_y)], fill=c, width=2)
+    draw.line([(cx + jaw_w, jaw_y), (cx + face_w, face_mid - int(h * 0.03))], fill=c, width=2)
+
+    # Cheekbone accent lines
+    for side in [-1, 1]:
+        cx2 = cx + side * int(w * 0.30)
+        draw.line([(cx2, int(h * 0.35)), (cx2 + side * 5, int(h * 0.48))],
+                  fill=_a(VIOLET, 140), width=2)
+
+    # Forehead tech line
+    imp_y = int(h * 0.14)
+    imp_hw = int(w * 0.20)
+    draw.line([(cx - imp_hw, imp_y), (cx + imp_hw, imp_y)], fill=_a(TEAL, 160), width=2)
+    for dx in range(-imp_hw, imp_hw + 1, imp_hw // 3):
+        draw.ellipse([cx + dx - 3, imp_y - 3, cx + dx + 3, imp_y + 3], fill=_a(CYAN_BRIGHT, 200))
+
+    # Temple data streams
+    for side in [-1, 1]:
+        tx = cx + side * int(w * 0.37)
+        for i in range(12):
+            ty = int(h * 0.16) + i * 10
+            alpha_v = max(30, 180 - i * 14)
+            bw = random.randint(2, 6)
+            draw.rectangle([tx - bw, ty, tx + bw, ty + 4], fill=_a(TEAL, alpha_v))
+
+    # Neck lines
+    neck_y = int(h * 0.82)
+    neck_w = int(w * 0.12)
+    draw.line([(cx - neck_w, neck_y), (cx - neck_w, int(h * 0.95))], fill=dim, width=1)
+    draw.line([(cx + neck_w, neck_y), (cx + neck_w, int(h * 0.95))], fill=dim, width=1)
+    # Cross bar
+    draw.line([(cx - neck_w - 10, int(h * 0.88)), (cx + neck_w + 10, int(h * 0.88))],
+              fill=dim, width=1)
 
 
-def _draw_glow_line(draw, points, color, glow_color, glow_radius=4, width=3):
-    """Draw a line with outer glow."""
-    for i in range(glow_radius, 0, -1):
-        alpha = int(glow_color[3] * (1 - i / glow_radius) * 0.4)
-        gc = (*glow_color[:3], alpha)
-        draw.line(points, fill=gc, width=width + i * 2)
-    draw.line(points, fill=color, width=width)
+def _draw_hud_data_readouts(draw, w, h):
+    """Draw corner HUD data elements — timestamps, hex, bars."""
+    dim = _a(CYAN_DIM, 100)
+    bright = _a(TEAL, 140)
+
+    # Top-left corner bracket
+    draw.line([(10, 10), (10, 40)], fill=bright, width=1)
+    draw.line([(10, 10), (40, 10)], fill=bright, width=1)
+
+    # Top-right corner bracket
+    draw.line([(w - 10, 10), (w - 10, 40)], fill=bright, width=1)
+    draw.line([(w - 10, 10), (w - 40, 10)], fill=bright, width=1)
+
+    # Bottom-left
+    draw.line([(10, h - 10), (10, h - 40)], fill=bright, width=1)
+    draw.line([(10, h - 10), (40, h - 10)], fill=bright, width=1)
+
+    # Bottom-right
+    draw.line([(w - 10, h - 10), (w - 10, h - 40)], fill=bright, width=1)
+    draw.line([(w - 10, h - 10), (w - 40, h - 10)], fill=bright, width=1)
+
+    # Side bars (signal strength style)
+    for i in range(5):
+        bh = 4 + i * 3
+        by = h - 60 - bh
+        draw.rectangle([20 + i * 8, by, 24 + i * 8, by + bh], fill=_a(TEAL, 80 + i * 30))
+
+    # Right side bars
+    for i in range(5):
+        bh = 4 + i * 3
+        by = h - 60 - bh
+        draw.rectangle([w - 60 + i * 8, by, w - 56 + i * 8, by + bh], fill=_a(TEAL, 80 + i * 30))
 
 
 # ---------------------------------------------------------------------------
-# Face Structure Layers
+# Face Layer
 # ---------------------------------------------------------------------------
 
-def generate_face_layers(
-    reference: Image.Image,
-    output_dir: Path | str,
-    canvas_size: tuple[int, int] = (512, 512),
-) -> None:
+def generate_face_layers(reference, output_dir: Path, canvas_size=(512, 512)):
     output_dir = Path(output_dir)
     w, h = canvas_size
+    random.seed(42)
 
-    ref = reference.convert("RGBA").resize(canvas_size, Image.LANCZOS)
-
-    # Boost contrast for the reference to pop in braille rendering
-    from PIL import ImageEnhance
-    ref_enhanced = ImageEnhance.Contrast(ref.convert("RGB")).enhance(1.5)
-    ref_enhanced = ImageEnhance.Brightness(ref_enhanced).enhance(1.1)
-    ref = ref_enhanced.convert("RGBA")
-
-    # --- FACE layers: extract center face region, mask out eyes/mouth area ---
     face_dir = output_dir / "face"
     face_dir.mkdir(parents=True, exist_ok=True)
 
-    # The face layer is the full reference with the eye and mouth regions
-    # made transparent (those come from expression layers)
-    face_base = ref.copy()
-    face_arr = np.array(face_base)
+    def _make_face(x_shift=0, y_shift=0, scale=1.0):
+        img = _blank(canvas_size)
+        draw = ImageDraw.Draw(img)
+        # Shift all drawing by applying transform later
+        _draw_hud_face_outline(draw, w, h)
+        _draw_hud_data_readouts(draw, w, h)
+        img = _glow(img, radius=4, intensity=1.3)
 
-    # Mask out eye regions (will be drawn by eye expression layers)
-    eye_cy = int(h * 0.36)
-    eye_ry = int(h * 0.09)
-    left_cx = int(w * 0.33)
-    right_cx = int(w * 0.67)
-    eye_rx = int(w * 0.14)
+        if x_shift != 0 or y_shift != 0 or scale != 1.0:
+            shifted = _blank(canvas_size)
+            if scale != 1.0:
+                sw = int(w * scale)
+                sh = int(h * scale)
+                img = img.resize((sw, sh), Image.LANCZOS)
+                x_shift += (w - sw) // 2
+                y_shift += (h - sh) // 2
+            shifted.paste(img, (x_shift, y_shift), img)
+            return shifted
+        return img
 
-    for ecx in [left_cx, right_cx]:
-        y0 = max(0, eye_cy - eye_ry)
-        y1 = min(h, eye_cy + eye_ry)
-        x0 = max(0, ecx - eye_rx)
-        x1 = min(w, ecx + eye_rx)
-        # Soft edge mask using distance from ellipse center
-        for y in range(y0, y1):
-            for x in range(x0, x1):
-                dy = (y - eye_cy) / eye_ry
-                dx = (x - ecx) / eye_rx
-                dist = dx * dx + dy * dy
-                if dist < 1.0:
-                    # Fade alpha at edges
-                    fade = max(0, 1.0 - dist)
-                    face_arr[y, x, 3] = int(face_arr[y, x, 3] * (1 - fade * 0.85))
+    _make_face().save(face_dir / "face_center.png")
+    _make_face(x_shift=-18, scale=0.96).save(face_dir / "face_left15.png")
+    _make_face(x_shift=18, scale=0.96).save(face_dir / "face_right15.png")
+    _make_face(y_shift=-10).save(face_dir / "face_up10.png")
+    _make_face(y_shift=10).save(face_dir / "face_down10.png")
 
-    # Mask out mouth region
-    mouth_cy = int(h * 0.64)
-    mouth_hw = int(w * 0.16)
-    mouth_ry = int(h * 0.07)
-    my0 = max(0, mouth_cy - mouth_ry)
-    my1 = min(h, mouth_cy + mouth_ry)
-    mx0 = max(0, w // 2 - mouth_hw)
-    mx1 = min(w, w // 2 + mouth_hw)
-    for y in range(my0, my1):
-        for x in range(mx0, mx1):
-            dy = (y - mouth_cy) / mouth_ry
-            dx = (x - w // 2) / mouth_hw
-            dist = dx * dx + dy * dy
-            if dist < 1.0:
-                fade = max(0, 1.0 - dist)
-                face_arr[y, x, 3] = int(face_arr[y, x, 3] * (1 - fade * 0.7))
-
-    face_base = Image.fromarray(face_arr, "RGBA")
-
-    # Add cyberpunk tech overlays to the face
-    draw = ImageDraw.Draw(face_base)
-
-    # Forehead implant line
-    imp_y = int(h * 0.15)
-    imp_w = int(w * 0.22)
-    _draw_glow_line(draw,
-        [(w // 2 - imp_w, imp_y), (w // 2 + imp_w, imp_y)],
-        (0, 160, 200, 140), (0, 200, 255, 60), glow_radius=3, width=2)
-    for dx in [-imp_w, -imp_w // 2, 0, imp_w // 2, imp_w]:
-        draw.ellipse([w // 2 + dx - 2, imp_y - 2, w // 2 + dx + 2, imp_y + 2],
-                     fill=(0, 255, 220, 180))
-
-    # Cheekbone implant lines
-    for side in [-1, 1]:
-        cx_chk = w // 2 + side * int(w * 0.28)
-        _draw_glow_line(draw,
-            [(cx_chk, int(h * 0.38)), (cx_chk + side * 6, int(h * 0.52))],
-            (80, 0, 180, 120), (120, 0, 255, 60), glow_radius=2, width=2)
-
-    # Temple circuits
-    for side in [-1, 1]:
-        tx = w // 2 + side * int(w * 0.38)
-        for i, ty in enumerate(range(int(h * 0.20), int(h * 0.40), 10)):
-            alpha = 160 - i * 18
-            draw.rectangle([tx - 2, ty, tx + 2, ty + 5],
-                          fill=(0, 200, 180, max(30, alpha)))
-
-    face_base.save(face_dir / "face_center.png")
-
-    # Angle variants
-    for name, x_off, scale_x in [
-        ("face_left15.png", -20, 0.94),
-        ("face_right15.png", 20, 0.94),
-    ]:
-        shifted = _blank_rgba(canvas_size)
-        fw = int(w * scale_x)
-        resized = face_base.resize((fw, h), Image.LANCZOS)
-        shifted.paste(resized, (x_off + (w - fw) // 2, 0), resized)
-        shifted.save(face_dir / name)
-    for name, y_off in [("face_up10.png", -12), ("face_down10.png", 12)]:
-        shifted = _blank_rgba(canvas_size)
-        shifted.paste(face_base, (0, y_off), face_base)
-        shifted.save(face_dir / name)
-
-    # --- HAIR layers: extract top portion of reference ---
+    # hair/ — abstract flowing lines above face
     hair_dir = output_dir / "hair"
     hair_dir.mkdir(parents=True, exist_ok=True)
 
-    # Hair = top 45% of the reference with soft bottom fade
-    hair_region = ref.copy()
-    hair_arr = np.array(hair_region)
-    fade_start = int(h * 0.30)
-    fade_end = int(h * 0.45)
-    for y in range(fade_start, h):
-        if y < fade_end:
-            alpha_mult = 1.0 - (y - fade_start) / (fade_end - fade_start)
-        else:
-            alpha_mult = 0.0
-        hair_arr[y, :, 3] = (hair_arr[y, :, 3] * alpha_mult).astype(np.uint8)
-    hair_base = Image.fromarray(hair_arr, "RGBA")
+    def _make_hair(x_shift=0):
+        img = _blank(canvas_size)
+        draw = ImageDraw.Draw(img)
+        cx = w // 2 + x_shift
+        # Flowing arc strands
+        for i in range(8):
+            spread = int(w * 0.35)
+            start_x = cx - spread + i * (spread * 2 // 8)
+            # Arc from top down sides
+            points = []
+            for t in range(20):
+                tt = t / 19
+                px = start_x + int(math.sin(tt * 2 + i * 0.7) * 15) + int(tt * (i - 4) * 12)
+                py = int(h * 0.02) + int(tt * h * 0.40)
+                points.append((px, py))
+            if len(points) > 1:
+                alpha_v = 120 - abs(i - 4) * 12
+                draw.line(points, fill=_a(PURPLE, max(40, alpha_v)), width=2)
 
-    hair_base.save(hair_dir / "hair_center.png")
-    for name, x_off in [("hair_left.png", -12), ("hair_right.png", 12)]:
-        shifted = _blank_rgba(canvas_size)
-        shifted.paste(hair_base, (x_off, 0), hair_base)
-        shifted.save(hair_dir / name)
+        # Highlight strands
+        for i in [2, 5]:
+            start_x = cx - int(w * 0.25) + i * int(w * 0.10)
+            points = [(start_x + int(math.sin(t / 15 * 3 + i) * 10),
+                       int(h * 0.04) + t * 2) for t in range(int(h * 0.18))]
+            if len(points) > 1:
+                draw.line(points, fill=_a(VIOLET, 100), width=1)
 
-    # --- NOSE layers: extract small center region ---
+        return _glow(img, radius=3, intensity=1.2)
+
+    _make_hair().save(hair_dir / "hair_center.png")
+    _make_hair(x_shift=-10).save(hair_dir / "hair_left.png")
+    _make_hair(x_shift=10).save(hair_dir / "hair_right.png")
+
+    # nose/ — minimal vertical line + bridge
     nose_dir = output_dir / "nose"
     nose_dir.mkdir(parents=True, exist_ok=True)
 
-    # Nose = small region at center, soft-masked
-    nose_base = _blank_rgba(canvas_size)
-    nose_region = ref.copy()
-    nose_arr = np.array(nose_region)
-    # Zero out everything except nose area
-    ny_center = int(h * 0.50)
-    nx_center = w // 2
-    nose_rx = int(w * 0.08)
-    nose_ry = int(h * 0.08)
-    for y in range(h):
-        for x in range(w):
-            dy = (y - ny_center) / nose_ry if nose_ry > 0 else 999
-            dx = (x - nx_center) / nose_rx if nose_rx > 0 else 999
-            dist = dx * dx + dy * dy
-            if dist > 1.0:
-                nose_arr[y, x, 3] = 0
-            elif dist > 0.6:
-                fade = (dist - 0.6) / 0.4
-                nose_arr[y, x, 3] = int(nose_arr[y, x, 3] * (1 - fade))
-    nose_base = Image.fromarray(nose_arr, "RGBA")
+    def _make_nose(x_shift=0):
+        img = _blank(canvas_size)
+        draw = ImageDraw.Draw(img)
+        cx = w // 2 + x_shift
+        ny1, ny2 = int(h * 0.44), int(h * 0.54)
+        draw.line([(cx, ny1), (cx, ny2)], fill=_a(CYAN_DIM, 100), width=1)
+        # Nostril dots
+        draw.ellipse([cx - 8 - 2, int(h * 0.535), cx - 8 + 2, int(h * 0.545)],
+                     fill=_a(CYAN_DIM, 80))
+        draw.ellipse([cx + 8 - 2, int(h * 0.535), cx + 8 + 2, int(h * 0.545)],
+                     fill=_a(CYAN_DIM, 80))
+        return img
 
-    # Add subtle nose bridge highlight
-    draw = ImageDraw.Draw(nose_base)
-    _draw_glow_line(draw,
-        [(nx_center, int(h * 0.44)), (nx_center, int(h * 0.55))],
-        (0, 120, 110, 80), (0, 160, 150, 40), glow_radius=2, width=1)
+    _make_nose().save(nose_dir / "nose_center.png")
+    _make_nose(x_shift=-3).save(nose_dir / "nose_left.png")
+    _make_nose(x_shift=3).save(nose_dir / "nose_right.png")
 
-    nose_base.save(nose_dir / "nose_center.png")
-    for name, x_off in [("nose_left.png", -4), ("nose_right.png", 4)]:
-        shifted = _blank_rgba(canvas_size)
-        shifted.paste(nose_base, (x_off, 0), nose_base)
-        shifted.save(nose_dir / name)
-
-
-def _draw_cyberpunk_face(canvas_size):
-    """Draw a detailed cyberpunk face outline — jawline, cheekbones, implant lines."""
-    w, h = canvas_size
-    img = _blank_rgba(canvas_size)
-    draw = ImageDraw.Draw(img)
-
-    cx, cy = w // 2, h // 2
-
-    # Face oval — large, fills most of canvas
-    face_w = int(w * 0.38)
-    face_top = int(h * 0.12)
-    face_bot = int(h * 0.82)
-    face_bbox = [cx - face_w, face_top, cx + face_w, face_bot]
-
-    # Face fill: dark with slight gradient (drawn as solid for now)
-    draw.ellipse(face_bbox, fill=(18, 15, 25, 240))
-
-    # Jawline — sharper than the oval, cyberpunk angular
-    jaw_y = int(h * 0.72)
-    chin_y = int(h * 0.82)
-    jaw_w = int(w * 0.34)
-    chin_w = int(w * 0.12)
-    jaw_points = [
-        (cx - jaw_w, int(h * 0.55)),  # left cheek
-        (cx - jaw_w + 5, jaw_y),       # left jaw angle
-        (cx - chin_w, chin_y),          # left chin
-        (cx, chin_y + 8),              # chin point
-        (cx + chin_w, chin_y),          # right chin
-        (cx + jaw_w - 5, jaw_y),       # right jaw angle
-        (cx + jaw_w, int(h * 0.55)),   # right cheek
-    ]
-    _draw_glow_line(draw, jaw_points, (0, 180, 170, 180), (0, 200, 200, 100), glow_radius=3, width=2)
-
-    # Cheekbone lines — cybernetic implant look
-    for side in [-1, 1]:
-        cheek_x = cx + side * int(w * 0.30)
-        cheek_y1 = int(h * 0.38)
-        cheek_y2 = int(h * 0.52)
-        _draw_glow_line(draw,
-            [(cheek_x, cheek_y1), (cheek_x + side * 8, cheek_y2)],
-            (80, 0, 180, 140), (120, 0, 255, 80), glow_radius=3, width=2)
-
-    # Forehead implant — horizontal tech line
-    imp_y = int(h * 0.18)
-    imp_w = int(w * 0.22)
-    _draw_glow_line(draw,
-        [(cx - imp_w, imp_y), (cx + imp_w, imp_y)],
-        (0, 160, 200, 160), (0, 200, 255, 80), glow_radius=4, width=2)
-    # Implant dots
-    for dx in [-imp_w, -imp_w // 2, 0, imp_w // 2, imp_w]:
-        draw.ellipse([cx + dx - 3, imp_y - 3, cx + dx + 3, imp_y + 3],
-                     fill=(0, 255, 220, 200))
-
-    # Temple circuit traces
-    for side in [-1, 1]:
-        tx = cx + side * int(w * 0.36)
-        for i, ty in enumerate(range(int(h * 0.22), int(h * 0.42), 12)):
-            alpha = 180 - i * 20
-            draw.rectangle([tx - 2, ty, tx + 2, ty + 6],
-                          fill=(0, 200, 180, max(40, alpha)))
-
-    return img
-
-
-def _draw_cyberpunk_hair(canvas_size):
-    """Draw stylized hair — flowing angular shapes."""
-    w, h = canvas_size
-    img = _blank_rgba(canvas_size)
-    draw = ImageDraw.Draw(img)
-    cx = w // 2
-
-    # Main hair mass — dark with purple/teal highlights
-    hair_points = [
-        (int(w * 0.12), int(h * 0.35)),
-        (int(w * 0.08), int(h * 0.20)),
-        (int(w * 0.15), int(h * 0.08)),
-        (int(w * 0.30), int(h * 0.03)),
-        (cx, int(h * 0.01)),
-        (int(w * 0.70), int(h * 0.03)),
-        (int(w * 0.85), int(h * 0.08)),
-        (int(w * 0.92), int(h * 0.20)),
-        (int(w * 0.88), int(h * 0.35)),
-        (int(w * 0.82), int(h * 0.50)),
-        (int(w * 0.78), int(h * 0.60)),
-        # sweep back through face area
-        (int(w * 0.70), int(h * 0.30)),
-        (cx, int(h * 0.12)),
-        (int(w * 0.30), int(h * 0.30)),
-        (int(w * 0.22), int(h * 0.60)),
-        (int(w * 0.18), int(h * 0.50)),
-    ]
-    draw.polygon(hair_points, fill=(12, 8, 22, 230))
-
-    # Hair highlight strands
-    strand_color = (40, 15, 70, 160)
-    for i in range(6):
-        sx = int(w * 0.25) + i * int(w * 0.09)
-        sy = int(h * 0.05) + (i % 3) * 5
-        ey = int(h * 0.40) + (i % 2) * int(h * 0.15)
-        draw.line([(sx, sy), (sx + (i - 3) * 8, ey)],
-                  fill=strand_color, width=3)
-
-    # Teal edge highlight
-    for i in range(len(hair_points) - 1):
-        p1, p2 = hair_points[i], hair_points[i + 1]
-        draw.line([p1, p2], fill=(0, 100, 120, 80), width=2)
-
-    return img
-
-
-def _draw_cyberpunk_nose(canvas_size):
-    """Draw a subtle nose bridge with tech accent."""
-    w, h = canvas_size
-    img = _blank_rgba(canvas_size)
-    draw = ImageDraw.Draw(img)
-    cx = w // 2
-
-    # Nose bridge — thin vertical line
-    ny1 = int(h * 0.44)
-    ny2 = int(h * 0.56)
-    _draw_glow_line(draw,
-        [(cx, ny1), (cx, ny2)],
-        (0, 140, 130, 120), (0, 180, 170, 60), glow_radius=2, width=2)
-
-    # Nostrils — small dots
-    nostril_y = int(h * 0.555)
-    for dx in [-12, 12]:
-        draw.ellipse([cx + dx - 4, nostril_y - 3, cx + dx + 4, nostril_y + 3],
-                     fill=(0, 120, 110, 100))
-
-    return img
+    random.seed()
 
 
 # ---------------------------------------------------------------------------
-# Expression Layers — BOLD cyberpunk style
+# Expression Layers — HUD style
 # ---------------------------------------------------------------------------
 
-def generate_expression_layers(
-    output_dir: Path | str,
-    canvas_size: tuple[int, int] = (512, 512),
-) -> None:
+def generate_expression_layers(output_dir: Path, canvas_size=(512, 512)):
     output_dir = Path(output_dir)
     w, h = canvas_size
+    cx = w // 2
 
-    # Eye geometry — LARGE, prominent
-    eye_cy = int(h * 0.36)
-    left_cx = int(w * 0.33)
-    right_cx = int(w * 0.67)
-    eye_rx = int(w * 0.12)   # wide
-    eye_ry_open = int(h * 0.07)
-    eye_ry_half = int(h * 0.035)
-    pupil_r = int(min(eye_rx, eye_ry_open) * 0.5)
-    iris_r = int(min(eye_rx, eye_ry_open) * 0.75)
-
-    # Colors
-    CYAN = (0, 240, 220, 255)
-    CYAN_GLOW = (0, 200, 255, 120)
-    DARK = (5, 8, 15, 255)
-    IRIS_COLOR = (0, 200, 200, 255)
-    PUPIL_COLOR = (0, 255, 240, 255)
-    HIGHLIGHT = (255, 255, 255, 240)
-    TEAL = (0, 180, 160, 255)
-    TEAL_GLOW = (0, 200, 180, 100)
-    RED_GLOW = (255, 0, 50, 100)
+    # Eye positions
+    eye_cy = int(h * 0.33)
+    left_cx = int(w * 0.34)
+    right_cx = int(w * 0.66)
+    eye_rx = int(w * 0.09)
+    eye_ry_open = int(h * 0.05)
 
     pupil_offsets = {
         "center": (0, 0),
@@ -519,217 +383,173 @@ def generate_expression_layers(
 
     for direction, (px_off, py_off) in pupil_offsets.items():
         for state in ["open", "half", "closed"]:
-            img = _blank_rgba(canvas_size)
+            img = _blank(canvas_size)
             draw = ImageDraw.Draw(img)
 
-            if state == "closed":
-                # Glowing horizontal lines where eyes are
-                for ecx in [left_cx, right_cx]:
-                    _draw_glow_line(draw,
-                        [(ecx - eye_rx, eye_cy), (ecx + eye_rx, eye_cy)],
-                        CYAN, CYAN_GLOW, glow_radius=6, width=3)
-                    # Small lash marks
-                    for dx in range(-eye_rx + 8, eye_rx, 14):
-                        draw.line([(ecx + dx, eye_cy), (ecx + dx, eye_cy + 6)],
-                                  fill=(0, 180, 170, 120), width=1)
-            else:
-                ery = eye_ry_open if state == "open" else eye_ry_half
-
-                for ecx in [left_cx, right_cx]:
+            for ecx in [left_cx, right_cx]:
+                if state == "closed":
+                    # Glowing shut line
+                    draw.line([(ecx - eye_rx, eye_cy), (ecx + eye_rx, eye_cy)],
+                              fill=_a(CYAN_BRIGHT, 200), width=2)
+                    # Lash ticks
+                    for dx in range(-eye_rx + 6, eye_rx, 10):
+                        draw.line([(ecx + dx, eye_cy), (ecx + dx, eye_cy + 4)],
+                                  fill=_a(CYAN, 100), width=1)
+                else:
+                    ery = eye_ry_open if state == "open" else int(eye_ry_open * 0.55)
                     bbox = [ecx - eye_rx, eye_cy - ery, ecx + eye_rx, eye_cy + ery]
 
-                    # Outer glow
-                    _draw_glow_ellipse(draw, bbox, CYAN, CYAN_GLOW,
-                                       glow_radius=8, width=3)
+                    # Outer ring (targeting reticle style)
+                    draw.ellipse(bbox, outline=_a(CYAN, 180), width=2)
 
-                    # Eye fill
-                    inner = [bbox[0] + 3, bbox[1] + 3, bbox[2] - 3, bbox[3] - 3]
-                    draw.ellipse(inner, fill=DARK)
+                    # Cross-hair marks at cardinal points
+                    for angle in [0, 90, 180, 270]:
+                        rad = math.radians(angle)
+                        x1 = ecx + int(math.cos(rad) * (eye_rx + 4))
+                        y1 = eye_cy + int(math.sin(rad) * (ery + 4))
+                        x2 = ecx + int(math.cos(rad) * (eye_rx + 10))
+                        y2 = eye_cy + int(math.sin(rad) * (ery + 10))
+                        draw.line([(x1, y1), (x2, y2)], fill=_a(CYAN_DIM, 120), width=1)
 
                     if state == "open":
-                        # Iris ring
-                        ir = min(iris_r, ery - 4)
-                        iris_bbox = [
-                            ecx + px_off - ir, eye_cy + py_off - ir,
-                            ecx + px_off + ir, eye_cy + py_off + ir,
-                        ]
-                        draw.ellipse(iris_bbox, outline=IRIS_COLOR, width=3)
+                        # Inner iris ring
+                        ir = int(min(eye_rx, ery) * 0.65)
+                        draw.ellipse([ecx + px_off - ir, eye_cy + py_off - ir,
+                                      ecx + px_off + ir, eye_cy + py_off + ir],
+                                     outline=_a(CYAN_BRIGHT, 200), width=2)
 
-                        # Inner iris gradient (smaller ring)
-                        ir2 = int(ir * 0.7)
-                        draw.ellipse([
-                            ecx + px_off - ir2, eye_cy + py_off - ir2,
-                            ecx + px_off + ir2, eye_cy + py_off + ir2,
-                        ], outline=(0, 160, 160, 180), width=2)
+                        # Inner iris detail ring
+                        ir2 = int(ir * 0.6)
+                        draw.ellipse([ecx + px_off - ir2, eye_cy + py_off - ir2,
+                                      ecx + px_off + ir2, eye_cy + py_off + ir2],
+                                     outline=_a(TEAL, 140), width=1)
 
-                    # Pupil (bright center)
-                    pr = pupil_r if state == "open" else int(pupil_r * 0.7)
-                    draw.ellipse([
-                        ecx + px_off - pr, eye_cy + py_off - pr,
-                        ecx + px_off + pr, eye_cy + py_off + pr,
-                    ], fill=PUPIL_COLOR)
+                    # Pupil — bright center dot
+                    pr = int(min(eye_rx, ery) * 0.25)
+                    draw.ellipse([ecx + px_off - pr, eye_cy + py_off - pr,
+                                  ecx + px_off + pr, eye_cy + py_off + pr],
+                                 fill=_a(CYAN_BRIGHT, 255))
 
-                    # Specular highlight
-                    hl_r = max(2, pr // 2)
-                    hl_x = ecx + px_off - int(pr * 0.3)
-                    hl_y = eye_cy + py_off - int(pr * 0.4)
-                    draw.ellipse([hl_x - hl_r, hl_y - hl_r, hl_x + hl_r, hl_y + hl_r],
-                                 fill=HIGHLIGHT)
+                    # Specular
+                    hl = max(2, pr // 2)
+                    draw.ellipse([ecx + px_off - hl - 2, eye_cy + py_off - pr,
+                                  ecx + px_off + hl - 2, eye_cy + py_off - pr + hl * 2],
+                                 fill=_a(WHITE, 220))
 
-                    # Secondary highlight (smaller, opposite side)
-                    hl2_r = max(1, hl_r // 2)
-                    hl2_x = ecx + px_off + int(pr * 0.3)
-                    hl2_y = eye_cy + py_off + int(pr * 0.2)
-                    draw.ellipse([hl2_x - hl2_r, hl2_y - hl2_r, hl2_x + hl2_r, hl2_y + hl2_r],
-                                 fill=(200, 255, 255, 160))
-
-                    # Tech detail: small circuit dots along eye rim
-                    if state == "open":
-                        for angle_deg in range(0, 360, 45):
-                            rad = math.radians(angle_deg)
-                            dx = int(eye_rx * math.cos(rad))
-                            dy = int(ery * math.sin(rad))
-                            dot_x = ecx + dx
-                            dot_y = eye_cy + dy
-                            draw.ellipse([dot_x - 1, dot_y - 1, dot_x + 1, dot_y + 1],
-                                         fill=(0, 200, 200, 100))
-
+            img = _glow(img, radius=5, intensity=1.4)
             img.save(eyes_dir / f"eyes_{direction}_{state}.png")
 
     # ---- eyebrows/ ----
     brows_dir = output_dir / "eyebrows"
     brows_dir.mkdir(parents=True, exist_ok=True)
 
-    brow_y = eye_cy - int(h * 0.10)
-    brow_hw = int(w * 0.13)
-    brow_thick = max(3, int(h * 0.018))
+    brow_y = eye_cy - int(h * 0.08)
+    brow_hw = int(w * 0.10)
 
-    def _draw_brows(fname, left_inner_dy, left_outer_dy, right_inner_dy, right_outer_dy):
-        img = _blank_rgba(canvas_size)
+    def _make_brows(fname, l_inner_dy, l_outer_dy, r_inner_dy, r_outer_dy):
+        img = _blank(canvas_size)
         draw = ImageDraw.Draw(img)
-        # Left brow (outer to inner = left to right)
-        _draw_glow_line(draw,
-            [(left_cx - brow_hw, brow_y + left_outer_dy),
-             (left_cx + brow_hw, brow_y + left_inner_dy)],
-            TEAL, TEAL_GLOW, glow_radius=5, width=brow_thick)
-        # Right brow (inner to outer = left to right)
-        _draw_glow_line(draw,
-            [(right_cx - brow_hw, brow_y + right_inner_dy),
-             (right_cx + brow_hw, brow_y + right_outer_dy)],
-            TEAL, TEAL_GLOW, glow_radius=5, width=brow_thick)
+        # Left brow
+        draw.line([(left_cx - brow_hw, brow_y + l_outer_dy),
+                    (left_cx + brow_hw, brow_y + l_inner_dy)],
+                   fill=_a(TEAL, 200), width=3)
+        # Right brow
+        draw.line([(right_cx - brow_hw, brow_y + r_inner_dy),
+                    (right_cx + brow_hw, brow_y + r_outer_dy)],
+                   fill=_a(TEAL, 200), width=3)
+        img = _glow(img, radius=4, intensity=1.3)
         img.save(brows_dir / fname)
 
-    _draw_brows("brows_neutral.png", 0, 0, 0, 0)
-    lift = int(h * 0.04)
-    _draw_brows("brows_raised.png", -lift, -int(lift * 0.5), -int(lift * 0.5), -lift)
-    furrow = int(h * 0.035)
-    _draw_brows("brows_furrowed.png", furrow, -int(furrow * 0.3), furrow, -int(furrow * 0.3))
-    _draw_brows("brows_asymmetric.png", -lift, -int(lift * 0.3), 0, int(furrow * 0.3))
+    _make_brows("brows_neutral.png", 0, 0, 0, 0)
+    lift = int(h * 0.03)
+    _make_brows("brows_raised.png", -lift, -int(lift * 0.5), -int(lift * 0.5), -lift)
+    furrow = int(h * 0.025)
+    _make_brows("brows_furrowed.png", furrow, -int(furrow * 0.3), furrow, -int(furrow * 0.3))
+    _make_brows("brows_asymmetric.png", -lift, -int(lift * 0.3), 0, int(furrow * 0.3))
 
     # ---- mouth/ ----
     mouth_dir = output_dir / "mouth"
     mouth_dir.mkdir(parents=True, exist_ok=True)
 
-    mouth_cy = int(h * 0.64)
-    mouth_hw = int(w * 0.14)
-    mouth_thick = max(3, int(h * 0.015))
+    mouth_cy = int(h * 0.63)
+    mouth_hw = int(w * 0.11)
 
-    # closed: glowing horizontal line
-    img = _blank_rgba(canvas_size)
+    # closed
+    img = _blank(canvas_size)
     draw = ImageDraw.Draw(img)
-    _draw_glow_line(draw,
-        [(w // 2 - mouth_hw, mouth_cy), (w // 2 + mouth_hw, mouth_cy)],
-        TEAL, TEAL_GLOW, glow_radius=5, width=mouth_thick)
-    img.save(mouth_dir / "mouth_closed.png")
+    draw.line([(cx - mouth_hw, mouth_cy), (cx + mouth_hw, mouth_cy)],
+              fill=_a(TEAL, 180), width=2)
+    _glow(img, radius=3, intensity=1.2).save(mouth_dir / "mouth_closed.png")
 
-    # slight, open, wide: ellipses of increasing size with glow
-    for fname, ry_frac in [("mouth_slight.png", 0.025), ("mouth_open.png", 0.055), ("mouth_wide.png", 0.085)]:
-        img = _blank_rgba(canvas_size)
+    # slight, open, wide
+    for fname, ry_frac in [("mouth_slight.png", 0.018), ("mouth_open.png", 0.04), ("mouth_wide.png", 0.065)]:
+        img = _blank(canvas_size)
         draw = ImageDraw.Draw(img)
-        m_ry = int(h * ry_frac)
-        bbox = [w // 2 - mouth_hw, mouth_cy - m_ry, w // 2 + mouth_hw, mouth_cy + m_ry]
+        mry = int(h * ry_frac)
+        # Outer shape
+        draw.ellipse([cx - mouth_hw, mouth_cy - mry, cx + mouth_hw, mouth_cy + mry],
+                     outline=_a(TEAL, 180), width=2)
         # Dark interior
-        inner = [bbox[0] + 3, bbox[1] + 3, bbox[2] - 3, bbox[3] - 3]
-        draw.ellipse(inner, fill=(5, 5, 10, 220))
-        # Glowing outline
-        _draw_glow_ellipse(draw, bbox, TEAL, TEAL_GLOW, glow_radius=6, width=mouth_thick)
-        # Teeth hint for wide
-        if ry_frac >= 0.08:
-            teeth_y = mouth_cy - int(m_ry * 0.3)
-            draw.line([(w // 2 - mouth_hw + 15, teeth_y), (w // 2 + mouth_hw - 15, teeth_y)],
-                      fill=(60, 60, 70, 180), width=2)
-        img.save(mouth_dir / fname)
+        draw.ellipse([cx - mouth_hw + 3, mouth_cy - mry + 3,
+                      cx + mouth_hw - 3, mouth_cy + mry - 3],
+                     fill=_a(DARK, 200))
+        # Horizontal mid-line (teeth hint for wide)
+        if ry_frac >= 0.06:
+            draw.line([(cx - mouth_hw + 8, mouth_cy - int(mry * 0.2)),
+                        (cx + mouth_hw - 8, mouth_cy - int(mry * 0.2))],
+                       fill=_a(CYAN_DIM, 80), width=1)
+        _glow(img, radius=3, intensity=1.2).save(mouth_dir / fname)
 
-    # smile: curved arc with glow
-    img = _blank_rgba(canvas_size)
+    # smile
+    img = _blank(canvas_size)
     draw = ImageDraw.Draw(img)
-    arc_ry = int(h * 0.04)
-    arc_bbox = [w // 2 - mouth_hw, mouth_cy - arc_ry, w // 2 + mouth_hw, mouth_cy + arc_ry]
-    # Glow pass
-    for i in range(5, 0, -1):
-        alpha = int(80 * (1 - i / 5))
-        expanded = [arc_bbox[0] - i, arc_bbox[1] - i, arc_bbox[2] + i, arc_bbox[3] + i]
-        draw.arc(expanded, start=5, end=175, fill=(*TEAL_GLOW[:3], alpha), width=2)
-    draw.arc(arc_bbox, start=5, end=175, fill=TEAL, width=mouth_thick)
-    img.save(mouth_dir / "mouth_smile.png")
+    arc_ry = int(h * 0.03)
+    draw.arc([cx - mouth_hw, mouth_cy - arc_ry, cx + mouth_hw, mouth_cy + arc_ry],
+             start=5, end=175, fill=_a(TEAL, 200), width=2)
+    _glow(img, radius=3, intensity=1.2).save(mouth_dir / "mouth_smile.png")
 
-    # glitch: jagged broken line with red/cyan
-    img = _blank_rgba(canvas_size)
+    # glitch
+    img = _blank(canvas_size)
     draw = ImageDraw.Draw(img)
-    rng77 = random.Random(77)
-    segments = 12
-    step = mouth_hw * 2 // segments
-    x = w // 2 - mouth_hw
-    points = [(x, mouth_cy)]
-    for i in range(segments):
-        x += step
-        y = mouth_cy + rng77.randint(-int(h * 0.04), int(h * 0.04))
+    rng = random.Random(77)
+    points = [(cx - mouth_hw, mouth_cy)]
+    step = mouth_hw * 2 // 10
+    for i in range(10):
+        x = cx - mouth_hw + (i + 1) * step
+        y = mouth_cy + rng.randint(-int(h * 0.035), int(h * 0.035))
         points.append((x, y))
-    # Draw with alternating red/cyan
     for i in range(len(points) - 1):
-        color = (255, 0, 80, 220) if i % 2 == 0 else (0, 255, 200, 220)
-        draw.line([points[i], points[i + 1]], fill=color, width=mouth_thick)
-    # Glitch artifacts
-    for _ in range(5):
-        gx = rng77.randint(w // 2 - mouth_hw, w // 2 + mouth_hw)
-        gy = rng77.randint(mouth_cy - int(h * 0.04), mouth_cy + int(h * 0.04))
-        draw.rectangle([gx, gy, gx + rng77.randint(5, 20), gy + 3],
-                       fill=(255, 0, 80, 150))
-    img.save(mouth_dir / "mouth_glitch.png")
+        color = _a(RED, 220) if i % 2 == 0 else _a(CYAN_BRIGHT, 220)
+        draw.line([points[i], points[i + 1]], fill=color, width=2)
+    # Glitch blocks
+    for _ in range(6):
+        gx = rng.randint(cx - mouth_hw, cx + mouth_hw)
+        gy = rng.randint(mouth_cy - int(h * 0.03), mouth_cy + int(h * 0.03))
+        draw.rectangle([gx, gy, gx + rng.randint(8, 25), gy + 3], fill=_a(RED, 160))
+    _glow(img, radius=2, intensity=1.1).save(mouth_dir / "mouth_glitch.png")
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate layered avatar assets")
+def main():
+    parser = argparse.ArgumentParser(description="Generate HUD avatar layers")
     parser.add_argument("--output", type=Path, default=Path("assets/layers"))
     parser.add_argument("--canvas-size", type=int, default=512)
     parser.add_argument("--reference", type=Path, default=None)
     args = parser.parse_args()
-
     canvas = (args.canvas_size, args.canvas_size)
 
     print("Generating backgrounds...")
-    generate_backgrounds(args.output / "background", canvas_size=canvas)
-
+    generate_backgrounds(args.output / "background", canvas)
     print("Generating overlays...")
-    generate_overlays(args.output / "overlay", canvas_size=canvas)
-
-    if args.reference and args.reference.exists():
-        ref_img = Image.open(args.reference).convert("RGB")
-    else:
-        ref_img = Image.new("RGB", canvas, (30, 20, 40))
-
+    generate_overlays(args.output / "overlay", canvas)
     print("Generating face layers...")
-    generate_face_layers(ref_img, args.output, canvas_size=canvas)
-
+    generate_face_layers(None, args.output, canvas)
     print("Generating expression layers...")
-    generate_expression_layers(args.output, canvas_size=canvas)
-
-    count = sum(1 for _ in args.output.rglob("*.png"))
-    print(f"Done. {count} PNGs generated.")
+    generate_expression_layers(args.output, canvas)
+    print(f"Done. {sum(1 for _ in args.output.rglob('*.png'))} PNGs.")
 
 
 if __name__ == "__main__":
