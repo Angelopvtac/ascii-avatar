@@ -136,12 +136,23 @@ def _load_portrait_frames(
     """Load portrait-based frames from an image or generate default."""
     from PIL import Image
 
-    charset = _resolve_charset(charset or DEFAULT_CHARSET)
+    # Force braille — sixel passthrough unreliable in tmux
+    charset = "braille"
 
     # Parse custom image path: "portrait:/path/to/image.png"
     if ":" in name and name != "portrait":
         image_path = name.split(":", 1)[1]
-        path = Path(image_path).resolve()
+        path = Path(image_path)
+        # Try relative to project root first
+        if not path.is_absolute():
+            project_root = Path(__file__).parent.parent.parent.parent
+            project_path = (project_root / path).resolve()
+            if project_path.exists():
+                path = project_path
+            else:
+                path = path.resolve()
+        else:
+            path = path.resolve()
         # Restrict to home directory to prevent arbitrary file reads
         home = Path.home().resolve()
         if not str(path).startswith(str(home)):
