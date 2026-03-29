@@ -126,8 +126,15 @@ class AvatarRenderer:
         """
         with self._term.hidden_cursor():
             if self._is_sixel:
-                sys.stdout.write(self._term.home + self._term.clear())
+                # Move to top-left and write sixel frame — do NOT clear()
+                # as that erases the image before the next frame renders.
+                sys.stdout.write("\033[H")  # cursor home
                 sys.stdout.write(frame)
+                # Status bar at bottom
+                y = self._term.height
+                sys.stdout.write(f"\033[{y};1H")
+                sys.stdout.write(status_bar[:self._term.width])
+                sys.stdout.write("\033[K")
                 sys.stdout.flush()
             else:
                 # Build the entire output as a single buffer, wrapped in

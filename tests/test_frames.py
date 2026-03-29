@@ -1,3 +1,5 @@
+from unittest.mock import patch, MagicMock
+
 from avatar.frames import load_frame_set
 
 
@@ -37,3 +39,19 @@ class TestFrameSet:
         import pytest
         with pytest.raises(KeyError):
             load_frame_set("nonexistent")
+
+
+class TestLayeredFrameSet:
+    @patch("avatar.frames.layered.FrameAtlasBuilder")
+    def test_load_layered2d(self, mock_builder_cls):
+        mock_builder = MagicMock()
+        mock_builder.build.return_value = (
+            {"idle": ["frame1"], "thinking": ["frame2"], "speaking": ["frame3"],
+             "listening": ["frame4"], "error": ["frame5"]},
+            {"idle": 0.8, "thinking": 0.15, "speaking": 0.1, "listening": 0.4, "error": 0.2},
+        )
+        mock_builder_cls.return_value = mock_builder
+        frames, rates = load_frame_set("layered2d")
+        assert "idle" in frames
+        assert rates["idle"] == 0.8
+        mock_builder_cls.assert_called_once()

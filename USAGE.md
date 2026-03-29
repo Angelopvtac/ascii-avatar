@@ -39,6 +39,28 @@ python -m avatar.main --headless -v
 python -m avatar.main --socket /tmp/my-avatar.sock
 ```
 
+## Rendering Modes
+
+### Layered 2.5D (default for ghost persona)
+
+The layered renderer composites 8 depth-ordered layers with parallax offsets for a
+3D holographic effect. Requires a sixel-capable terminal.
+
+Frames are pre-rendered at first launch (~5-15 seconds) and cached to
+`~/.cache/ascii-avatar/frames/`. Subsequent launches are instant.
+
+To regenerate assets from a custom reference image:
+
+```bash
+python scripts/generate_layers.py --reference /path/to/face.png --output assets/layers
+```
+
+To clear the frame cache:
+
+```bash
+rm -rf ~/.cache/ascii-avatar/frames/
+```
+
 ## Sending Events via CLI
 
 Use the bridge CLI to push events to a running avatar process:

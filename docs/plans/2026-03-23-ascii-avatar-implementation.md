@@ -24,7 +24,7 @@
 **Step 1: Create directory structure**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 mkdir -p src/avatar/voice src/avatar/bridge src/avatar/frames tests assets/frames scripts
 ```
 
@@ -95,7 +95,7 @@ pythonpath = ["src"]
 **Step 4: Create venv and install in dev mode**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 uv venv
 source .venv/bin/activate
 uv pip install -e ".[dev]"
@@ -111,7 +111,7 @@ uv pip install -e . --no-deps
 **Step 5: Verify pytest runs**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 python -m pytest tests/ -v
 ```
 
@@ -267,7 +267,7 @@ class TestStateMachine:
 **Step 2: Run tests to verify they fail**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 python -m pytest tests/test_state_machine.py -v
 ```
 

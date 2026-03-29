@@ -35,7 +35,7 @@ packages = ["src/avatar"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 markers = [
     "integration: marks tests as integration tests (may require subprocess/sockets)",
 ]

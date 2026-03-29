@@ -2,6 +2,7 @@
 
 Supports multiple modes:
 - "cyberpunk": hand-crafted ASCII art frames (legacy)
+- "layered2d": procedurally generated 2.5D layered avatar frames
 - "portrait": image-to-ASCII converted frames from a portrait image
 - "portrait:<path>": custom image as avatar source
 
@@ -72,7 +73,7 @@ def load_frame_set(
     """Load a frame set by name.
 
     Args:
-        name: "cyberpunk", "portrait", or "portrait:/path/to/image.png"
+        name: "cyberpunk", "layered2d", "portrait", or "portrait:/path/to/image.png"
         width: ASCII art width in characters.  ``None`` = auto-detect.
         height: ASCII art height in lines.  ``None`` = auto-detect.
         charset: Override rendering charset.  ``None`` = DEFAULT_CHARSET.
@@ -86,10 +87,120 @@ def load_frame_set(
         from avatar.frames.cyberpunk import FRAMES, FRAME_RATES as RATES
         return FRAMES, RATES
 
+    if name == "layered2d":
+        return _load_layered2d_frames(width, height)
+
+    if name == "musetalk":
+        return _load_musetalk_frames(width, height)
+
     if name.startswith("portrait"):
         return _load_portrait_frames(name, width, height, charset)
 
     raise KeyError(f"Unknown frame set: {name}")
+
+
+def _load_musetalk_frames(
+    width: int | None,
+    height: int | None,
+) -> tuple[dict[str, list[str]], dict[str, float]]:
+    """Load pre-rendered MuseTalk frames with GITS color grade.
+
+    Converts PNG frames to braille strings at startup, caches result.
+    """
+    import pickle
+    from PIL import Image
+    from avatar.frames.converter import _braille_convert
+
+    if width is None or height is None:
+        auto_w, auto_h = _detect_terminal_size()
+        width = width or auto_w
+        height = height or auto_h
+
+    gits_dir = Path(__file__).parent.parent.parent.parent / "assets" / "gits_frames"
+    cache_dir = Path.home() / ".cache" / "ascii-avatar" / "musetalk"
+    cache_file = cache_dir / f"{width}x{height}.pkl"
+
+    # Try cache
+    if cache_file.exists():
+        try:
+            with open(cache_file, "rb") as f:
+                cached = pickle.load(f)
+            log.info("Loaded MuseTalk frames from cache (%dx%d)", width, height)
+            return cached, FRAME_RATES
+        except Exception:
+            pass
+
+    log.info("Building MuseTalk braille frames (%dx%d)...", width, height)
+
+    frames: dict[str, list[str]] = {}
+    states = ["idle", "speaking", "thinking", "listening", "error"]
+
+    for state in states:
+        state_dir = gits_dir / state
+        if not state_dir.exists():
+            log.warning("Missing MuseTalk state dir: %s", state_dir)
+            frames[state] = []
+            continue
+
+        pngs = sorted(state_dir.glob("*.png"))
+        state_frames = []
+        for png_path in pngs:
+            img = Image.open(png_path)
+            braille_str = _braille_convert(
+                img, width, height,
+                invert=False, gits=False,
+                tint=(0, 220, 100),
+            )
+            state_frames.append(braille_str)
+
+        frames[state] = state_frames
+        log.info("  %s: %d frames", state, len(state_frames))
+
+    # Micro-events: reuse idle frames for blink/glitch/flicker
+    idle_frames = frames.get("idle", [])
+    if idle_frames:
+        frames["blink"] = idle_frames[:4] if len(idle_frames) >= 4 else idle_frames
+        frames["glitch"] = frames.get("error", idle_frames)[:6]
+        frames["flicker"] = idle_frames[:3]
+
+    # Cache
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    with open(cache_file, "wb") as f:
+        pickle.dump(frames, f)
+    log.info("Cached MuseTalk frames to %s", cache_file)
+
+    return frames, FRAME_RATES
+
+
+def _load_layered2d_frames(
+    width: int | None,
+    height: int | None,
+) -> tuple[dict[str, list[str]], dict[str, float]]:
+    """Generate layered 2.5D avatar frames via FrameAtlasBuilder.
+
+    Uses sixel if the terminal supports it, otherwise falls back to braille.
+    """
+    from avatar.frames.layered import FrameAtlasBuilder
+
+    # Detect terminal character dimensions
+    if width is None or height is None:
+        auto_w, auto_h = _detect_terminal_size()
+        width = width or auto_w
+        height = height or auto_h
+
+    # Always use braille for layered2d — sixel passthrough is unreliable in tmux
+    charset = "braille"
+
+    log.info("Layered2D: charset=%s, terminal=%dx%d chars", charset, width, height)
+
+    builder = FrameAtlasBuilder(
+        charset=charset,
+        char_width=width,
+        char_height=height,
+        pixel_width=width * 8,
+        pixel_height=height * 16,
+    )
+    return builder.build()
 
 
 def _load_portrait_frames(
@@ -101,12 +212,23 @@ def _load_portrait_frames(
     """Load portrait-based frames from an image or generate default."""
     from PIL import Image
 
-    charset = _resolve_charset(charset or DEFAULT_CHARSET)
+    # Force braille — sixel passthrough unreliable in tmux
+    charset = "braille"
 
     # Parse custom image path: "portrait:/path/to/image.png"
     if ":" in name and name != "portrait":
         image_path = name.split(":", 1)[1]
-        path = Path(image_path).resolve()
+        path = Path(image_path)
+        # Try relative to project root first
+        if not path.is_absolute():
+            project_root = Path(__file__).parent.parent.parent.parent
+            project_path = (project_root / path).resolve()
+            if project_path.exists():
+                path = project_path
+            else:
+                path = path.resolve()
+        else:
+            path = path.resolve()
         # Restrict to home directory to prevent arbitrary file reads
         home = Path.home().resolve()
         if not str(path).startswith(str(home)):
