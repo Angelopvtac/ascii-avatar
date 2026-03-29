@@ -13,7 +13,7 @@
 ### Task 1: Add anthropic SDK to dependencies
 
 **Files:**
-- Modify: `/home/angelo/projects/ascii-avatar/pyproject.toml`
+- Modify: `/path/to/ascii-avatar/pyproject.toml`
 
 **Step 1: Add anthropic to dependencies**
 
@@ -33,10 +33,10 @@ dependencies = [
 **Step 2: Install**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 source .venv/bin/activate
 uv pip install -e ".[dev]"
-pipx install --force "/home/angelo/projects/ascii-avatar[kokoro]"
+pipx install --force "/path/to/ascii-avatar[kokoro]"
 ```
 
 **Step 3: Verify anthropic is available**
@@ -57,8 +57,8 @@ git commit -m "deps: add anthropic SDK for voice channel summarization"
 ### Task 2: Create voice channel summarizer
 
 **Files:**
-- Create: `/home/angelo/projects/ascii-avatar/src/avatar/voice/summarizer.py`
-- Create: `/home/angelo/projects/ascii-avatar/tests/test_summarizer.py`
+- Create: `/path/to/ascii-avatar/src/avatar/voice/summarizer.py`
+- Create: `/path/to/ascii-avatar/tests/test_summarizer.py`
 
 **Step 1: Write failing tests**
 
@@ -286,7 +286,7 @@ git commit -m "feat: voice channel summarizer — Haiku transforms text to spoke
 ### Task 3: Wire summarizer into hook_stop
 
 **Files:**
-- Modify: `/home/angelo/projects/ascii-avatar/src/avatar/bridge/hook_stop.py`
+- Modify: `/path/to/ascii-avatar/src/avatar/bridge/hook_stop.py`
 
 **Step 1: Replace summarize_for_speech with summarize_for_voice**
 
@@ -354,16 +354,16 @@ if __name__ == "__main__":
 **Step 2: Reinstall**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 source .venv/bin/activate
 uv pip install -e ".[dev]"
-pipx install --force "/home/angelo/projects/ascii-avatar[kokoro]"
+pipx install --force "/path/to/ascii-avatar[kokoro]"
 ```
 
 **Step 3: Test the hook manually**
 
 ```bash
-echo '{"last_assistant_message": "I analyzed the auth middleware and found a null reference on line 42. Fixed it and added a test. All 23 tests pass now."}' | ANTHROPIC_API_KEY=$(grep -oP 'ANTHROPIC_API_KEY=\K.*' ~/.bashrc 2>/dev/null || echo "") /home/angelo/.local/share/pipx/venvs/ascii-avatar/bin/python -m avatar.bridge.hook_stop
+echo '{"last_assistant_message": "I analyzed the auth middleware and found a null reference on line 42. Fixed it and added a test. All 23 tests pass now."}' | ANTHROPIC_API_KEY=$(grep -oP 'ANTHROPIC_API_KEY=\K.*' ~/.bashrc 2>/dev/null || echo "") python3 -m avatar.bridge.hook_stop
 cat /tmp/avatar-hooks.log | tail -5
 ```
 
@@ -381,7 +381,7 @@ git commit -m "feat: hook_stop uses Haiku to generate spoken status updates"
 ### Task 4: Ensure API key is available to hooks
 
 **Files:**
-- Modify: `/home/angelo/.claude/agents/avatar-start.sh`
+- Modify: `~/.claude/agents/avatar-start.sh`
 
 The hook runs as a subprocess of Claude Code. Claude Code has `ANTHROPIC_API_KEY` in its environment (it needs it to function). The hook inherits this — so Haiku calls should work automatically.
 
@@ -389,7 +389,7 @@ The hook runs as a subprocess of Claude Code. Claude Code has `ANTHROPIC_API_KEY
 
 ```bash
 # Check if Claude Code passes its env to hook subprocesses
-echo '{}' | /home/angelo/.local/share/pipx/venvs/ascii-avatar/bin/python -c "
+echo '{}' | python3 -c "
 import os
 key = os.environ.get('ANTHROPIC_API_KEY', '')
 print(f'Key present: {bool(key)}')

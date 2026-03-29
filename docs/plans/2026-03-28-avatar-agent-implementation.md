@@ -90,7 +90,7 @@ class TestSessionTracker:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_session_tracker.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_session_tracker.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'avatar.session_tracker'`
 
 - [ ] **Step 3: Implement SessionInfo and SessionTracker.update()**
@@ -158,13 +158,13 @@ class SessionTracker:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_session_tracker.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_session_tracker.py -v`
 Expected: All 5 tests PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 git add src/avatar/session_tracker.py tests/test_session_tracker.py
 git commit -m "feat(agent): add SessionTracker data model with update and project detection"
 ```
@@ -235,7 +235,7 @@ class TestSessionSummary:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_session_tracker.py::TestSessionSummary -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_session_tracker.py::TestSessionSummary -v`
 Expected: FAIL — `AttributeError: 'SessionTracker' object has no attribute 'summarize'`
 
 - [ ] **Step 3: Implement summarize, mark_stale, reset_counts, active_count**
@@ -276,13 +276,13 @@ Add to `SessionTracker` in `src/avatar/session_tracker.py`:
 
 - [ ] **Step 4: Run tests**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_session_tracker.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_session_tracker.py -v`
 Expected: All 11 tests PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 git add src/avatar/session_tracker.py tests/test_session_tracker.py
 git commit -m "feat(agent): add session summarize, staleness marking, and count reset"
 ```
@@ -374,7 +374,7 @@ class TestParseResponse:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_agent_prompt.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_agent_prompt.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'avatar.agent_prompt'`
 
 - [ ] **Step 3: Implement agent_prompt.py**
@@ -481,13 +481,13 @@ def parse_response(raw: str) -> tuple[str, str | None]:
 
 - [ ] **Step 4: Run tests**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_agent_prompt.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_agent_prompt.py -v`
 Expected: All 9 tests PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 git add src/avatar/agent_prompt.py tests/test_agent_prompt.py
 git commit -m "feat(agent): add Haiku system prompt builder and response parser"
 ```
@@ -592,7 +592,7 @@ class TestHookEventScript:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_hook_event.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_hook_event.py -v`
 Expected: FAIL — script doesn't exist or wrong behavior
 
 - [ ] **Step 3: Implement the unified hook script**
@@ -639,13 +639,13 @@ if __name__ == "__main__":
 
 - [ ] **Step 4: Run tests**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_hook_event.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_hook_event.py -v`
 Expected: All 2 tests PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 git add scripts/claude-hook-event.py tests/test_hook_event.py
 git commit -m "feat(agent): add unified hook event forwarder script"
 ```
@@ -757,7 +757,7 @@ class TestAgentLoop:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_agent.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_agent.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'avatar.agent'`
 
 - [ ] **Step 3: Implement the agent loop core**
@@ -904,13 +904,13 @@ class AgentLoop:
 
 - [ ] **Step 4: Run tests**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_agent.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_agent.py -v`
 Expected: All 9 tests PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 git add src/avatar/agent.py tests/test_agent.py
 git commit -m "feat(agent): add AgentLoop core decision engine with Haiku integration"
 ```
@@ -1008,7 +1008,7 @@ class TestAgentCallbacks:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_agent.py::TestAgentEventCollection -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_agent.py::TestAgentEventCollection -v`
 Expected: FAIL — `AttributeError: 'AgentLoop' object has no attribute 'start_listener'`
 
 - [ ] **Step 3: Implement listener, callbacks, and _act()**
@@ -1104,13 +1104,13 @@ Update `__init__` to initialize the new attributes.
 
 - [ ] **Step 4: Run all agent tests**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_agent.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_agent.py -v`
 Expected: All 14 tests PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 git add src/avatar/agent.py tests/test_agent.py
 git commit -m "feat(agent): add ZeroMQ listener, event collection, and renderer/TTS callbacks"
 ```
@@ -1145,7 +1145,7 @@ class TestMainAgentFlag:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_agent.py::TestMainAgentFlag -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_agent.py::TestMainAgentFlag -v`
 Expected: FAIL — `"unrecognized arguments: --agent"` in stderr
 
 - [ ] **Step 3: Add --agent flag to main.py**
@@ -1257,13 +1257,13 @@ And the finally block:
 
 - [ ] **Step 4: Run the test**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_agent.py::TestMainAgentFlag -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_agent.py::TestMainAgentFlag -v`
 Expected: PASS — `--agent` flag accepted without error
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 git add src/avatar/main.py
 git commit -m "feat(agent): add --agent flag to main.py for Haiku-driven control"
 ```
@@ -1454,13 +1454,13 @@ class TestAgentIntegration:
 
 - [ ] **Step 2: Run integration tests**
 
-Run: `cd /home/angelo/projects/ascii-avatar && python -m pytest tests/test_agent_integration.py -v`
+Run: `cd /path/to/ascii-avatar && python -m pytest tests/test_agent_integration.py -v`
 Expected: All 6 tests PASS (they exercise existing code from Tasks 1-6)
 
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 git add tests/test_agent_integration.py
 git commit -m "test(agent): add end-to-end integration tests for agent pipeline"
 ```
@@ -1485,31 +1485,31 @@ Create a section in the existing README or a new file `docs/agent-setup.md` with
     "PreToolUse": [
       {
         "type": "command",
-        "command": "python3 /home/angelo/projects/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
+        "command": "python3 /path/to/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
       }
     ],
     "PostToolUse": [
       {
         "type": "command",
-        "command": "python3 /home/angelo/projects/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
+        "command": "python3 /path/to/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
       }
     ],
     "PostToolUseFailure": [
       {
         "type": "command",
-        "command": "python3 /home/angelo/projects/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
+        "command": "python3 /path/to/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
       }
     ],
     "UserPromptSubmit": [
       {
         "type": "command",
-        "command": "python3 /home/angelo/projects/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
+        "command": "python3 /path/to/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "python3 /home/angelo/projects/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
+        "command": "python3 /path/to/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
       }
     ]
   }
@@ -1537,7 +1537,7 @@ Add to the top of `scripts/claude-hook-speak.py`:
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 git add docs/agent-setup.md scripts/claude-hook-speak.py
 git commit -m "docs(agent): add hook configuration guide and deprecate legacy hook script"
 ```

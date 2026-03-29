@@ -28,31 +28,31 @@ Add to your Claude Code `settings.json` (global or project-level) to route all h
     "PreToolUse": [
       {
         "type": "command",
-        "command": "python3 /home/angelo/projects/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
+        "command": "python3 /path/to/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
       }
     ],
     "PostToolUse": [
       {
         "type": "command",
-        "command": "python3 /home/angelo/projects/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
+        "command": "python3 /path/to/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
       }
     ],
     "PostToolUseFailure": [
       {
         "type": "command",
-        "command": "python3 /home/angelo/projects/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
+        "command": "python3 /path/to/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
       }
     ],
     "UserPromptSubmit": [
       {
         "type": "command",
-        "command": "python3 /home/angelo/projects/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
+        "command": "python3 /path/to/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "python3 /home/angelo/projects/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
+        "command": "python3 /path/to/ascii-avatar/scripts/claude-hook-event.py --socket /tmp/ascii-avatar.sock"
       }
     ]
   }

@@ -15,7 +15,7 @@
 ### Task 1: Diagnose Why Avatar Session Doesn't Fire Hooks
 
 **Files:**
-- Modify: `/home/angelo/.claude/agents/avatar-start.sh`
+- Modify: `~/.claude/agents/avatar-start.sh`
 
 **Step 1: Check if avatar session has hooks loaded**
 
@@ -66,7 +66,7 @@ Say "hello" in the Claude session. Check `/tmp/avatar-hooks.log` for a NEW sessi
 **Step 4: Commit**
 
 ```bash
-cd /home/angelo/projects/ascii-avatar
+cd /path/to/ascii-avatar
 git add scripts/ && git commit -m "fix: avatar starts first, removed mcp-config flag"
 ```
 
@@ -77,7 +77,7 @@ git add scripts/ && git commit -m "fix: avatar starts first, removed mcp-config 
 If the avatar session still doesn't fire hooks from `settings.json`, register hooks directly when starting the session.
 
 **Files:**
-- Modify: `/home/angelo/.claude/agents/avatar-start.sh`
+- Modify: `~/.claude/agents/avatar-start.sh`
 
 **Step 1: Create a session-init approach**
 
@@ -90,7 +90,7 @@ set -euo pipefail
 SOCKET="/tmp/ascii-avatar.sock"
 CLAUDE="$(which claude)"
 AVATAR="$(which avatar)"
-PIPX_PY="/home/angelo/.local/share/pipx/venvs/ascii-avatar/bin/python"
+PIPX_PY="python3"
 
 if [ -e "$SOCKET" ]; then
     rm -f "$SOCKET"
@@ -223,9 +223,9 @@ git add -A && git commit -m "fix: verified voice loop end-to-end"
 ### Task 4: Clean Up Stale Config
 
 **Files:**
-- Modify: `/home/angelo/.claude/settings.json` — remove avatar hooks from global (only project-level)
-- Modify: `/home/angelo/.claude/agents/avatar.md` — simplify (no MCP tool instructions needed)
-- Delete: `/home/angelo/.claude/agents/avatar-mcp-config.json` — no longer needed
+- Modify: `~/.claude/settings.json` — remove avatar hooks from global (only project-level)
+- Modify: `~/.claude/agents/avatar.md` — simplify (no MCP tool instructions needed)
+- Delete: `~/.claude/agents/avatar-mcp-config.json` — no longer needed
 - Run: `claude mcp remove ascii-avatar -s user` — MCP server no longer needed
 
 **Step 1: Clean settings.json**
@@ -256,7 +256,7 @@ You are Ghost — calm, minimal, direct. Keep responses concise and actionable.
 
 ```bash
 claude mcp remove ascii-avatar -s user 2>/dev/null
-rm -f /home/angelo/.claude/agents/avatar-mcp-config.json
+rm -f ~/.claude/agents/avatar-mcp-config.json
 ```
 
 **Step 4: Commit**

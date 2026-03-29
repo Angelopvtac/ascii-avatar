@@ -6,7 +6,7 @@ import json
 import sys
 import subprocess
 
-BRIDGE = "/home/angelo/projects/ascii-avatar/.venv/bin/avatar-bridge"
+BRIDGE = "avatar-bridge"  # Assumes installed in PATH via pip install -e .
 SOCKET = "/tmp/ascii-avatar.sock"
 MAX_CHARS = 300
 
